@@ -1,0 +1,48 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from app.routers import health, produtos, usuarios, clientes, vendas
+from app.db.session import engine
+from app.db.base import DeclarativeBase
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Verificar e criar tabelas se necessário
+    print("Iniciando backend...")
+    async with engine.begin() as conn:
+        print("Verificando estrutura do PostgreSQL...")
+        await conn.run_sync(DeclarativeBase.metadata.create_all)
+        print("Estrutura do banco verificada!")
+    
+    yield
+    
+    # Shutdown
+    print("Encerrando backend...")
+    await engine.dispose()
+
+app = FastAPI(
+    title="PDV3 Hybrid Backend",
+    description="API for PDV3 online/offline synchronization.",
+    version="0.1.0",
+    lifespan=lifespan
+)
+
+# CORS (Cross-Origin Resource Sharing)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for hybrid client access
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Incluir routers
+app.include_router(health.router)
+app.include_router(produtos.router)
+app.include_router(usuarios.router)
+app.include_router(clientes.router)
+app.include_router(vendas.router)
+
+@app.get("/")
+async def read_root():
+    return {"message": "PDV3 Backend is running!"}
