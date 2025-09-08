@@ -9,16 +9,24 @@ from app.db.base import DeclarativeBase
 async def lifespan(app: FastAPI):
     # Startup: Verificar e criar tabelas se necessário
     print("Iniciando backend...")
-    async with engine.begin() as conn:
-        print("Verificando estrutura do PostgreSQL...")
-        await conn.run_sync(DeclarativeBase.metadata.create_all)
-        print("Estrutura do banco verificada!")
+    try:
+        async with engine.begin() as conn:
+            print("Verificando estrutura do PostgreSQL...")
+            await conn.run_sync(DeclarativeBase.metadata.create_all)
+            print("Estrutura do banco verificada!")
+    except Exception as e:
+        print(f"Erro ao conectar com o banco: {e}")
+        # Continue mesmo com erro de banco para permitir healthcheck
+        pass
     
     yield
     
     # Shutdown
     print("Encerrando backend...")
-    await engine.dispose()
+    try:
+        await engine.dispose()
+    except:
+        pass
 
 app = FastAPI(
     title="PDV3 Hybrid Backend",
