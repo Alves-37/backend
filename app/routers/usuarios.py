@@ -71,6 +71,11 @@ async def criar_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_d
                 usuario_uuid = uuid.UUID(usuario.uuid)
             except ValueError:
                 usuario_uuid = uuid.uuid4()
+
+        # Verificar duplicidade de UUID (id) antes de inserir
+        existing_by_id = await db.execute(select(User).where(User.id == str(usuario_uuid)))
+        if existing_by_id.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Usuário já existe (mesmo id)")
         
         novo_usuario = User(
             id=usuario_uuid,
@@ -104,19 +109,22 @@ async def atualizar_usuario(usuario_id: str, usuario: UsuarioUpdate, db: AsyncSe
         # Atualizar campos
         update_data = {}
         if usuario.nome is not None:
-            update_data[User.nome] = usuario.nome
+            update_data['nome'] = usuario.nome
         if usuario.usuario is not None:
-            update_data[User.usuario] = usuario.usuario
+            update_data['usuario'] = usuario.usuario
         if usuario.senha is not None:
-            update_data[User.senha_hash] = usuario.senha
+            update_data['senha_hash'] = usuario.senha
         if usuario.is_admin is not None:
-            update_data[User.is_admin] = usuario.is_admin
+            update_data['is_admin'] = usuario.is_admin
+        if hasattr(usuario, 'ativo') and usuario.ativo is not None:
+            update_data['ativo'] = usuario.ativo
         
-        update_data[User.updated_at] = datetime.utcnow()
+        update_data['updated_at'] = datetime.utcnow()
         
-        await db.execute(
-            update(User).where(User.id == usuario_id).values(**update_data)
-        )
+        if update_data:
+            await db.execute(
+                update(User).where(User.id == usuario_id).values(**update_data)
+            )
         await db.commit()
         
         # Retornar usuário atualizado

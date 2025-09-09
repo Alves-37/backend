@@ -157,7 +157,7 @@ class DatabaseReset:
             await self.conn.execute("""
                 CREATE TABLE vendas (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    usuario_id UUID NOT NULL REFERENCES users(id),
+                    usuario_id UUID NOT NULL REFERENCES usuarios(id),
                     total DECIMAL(10,2) NOT NULL,
                     forma_pagamento VARCHAR(50) NOT NULL,
                     valor_recebido DECIMAL(10,2),
@@ -228,16 +228,15 @@ class DatabaseReset:
             # 3. Recriar tabelas
             await self.create_tables()
             
-            # 4. Criar usuário admin
-            await self.create_admin_user()
+            # 4. (Opcional) Criar usuário admin - DESATIVADO por padrão para não atrapalhar a sincronização inicial
+            # await self.create_admin_user()
             
             print("=" * 60)
             print("✅ RESET COMPLETO CONCLUÍDO COM SUCESSO!")
             print("📊 Resumo:")
             print(f"   - Backup realizado: {len(backup_data)} tabelas")
             print("   - Todas as tabelas recriadas")
-            print("   - Usuário admin criado")
-            print("   - Login: admin | Senha: admin123")
+            print("   - Usuário admin NÃO foi criado automaticamente (intencional)")
             
         except Exception as e:
             print(f"❌ ERRO NO RESET: {e}")
@@ -262,14 +261,14 @@ class DatabaseReset:
                 except Exception as e:
                     print(f"   - Erro ao limpar {table}: {e}")
             
-            # Criar usuário admin
-            await self.create_admin_user()
+            # (Opcional) Criar usuário admin - DESATIVADO por padrão para não atrapalhar a sincronização inicial
+            # await self.create_admin_user()
             
             print("=" * 60)
             print("✅ LIMPEZA DE DADOS CONCLUÍDA!")
             print("   - Estrutura das tabelas mantida")
             print("   - Todos os dados removidos")
-            print("   - Usuário admin recriado")
+            print("   - Usuário admin NÃO foi recriado automaticamente (intencional)")
             
         except Exception as e:
             print(f"❌ ERRO NA LIMPEZA: {e}")
