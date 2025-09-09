@@ -65,6 +65,7 @@ class ItemVenda(DeclarativeBase):
     venda_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("vendas.id"), nullable=False)
     produto_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("produtos.id"), nullable=False)
     quantidade: Mapped[int] = mapped_column(Integer, nullable=False)
+    peso_kg: Mapped[float] = mapped_column(Float, default=0.0)
     preco_unitario: Mapped[float] = mapped_column(Float, nullable=False)
     subtotal: Mapped[float] = mapped_column(Float, nullable=False)
     

@@ -86,6 +86,7 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
                     venda_id=nova_venda.id,
                     produto_id=uuid.UUID(item_data.produto_id),
                     quantidade=item_data.quantidade,
+                    peso_kg=getattr(item_data, 'peso_kg', 0.0),
                     preco_unitario=item_data.preco_unitario,
                     subtotal=item_data.subtotal
                 )

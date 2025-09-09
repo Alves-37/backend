@@ -5,7 +5,8 @@ import uuid
 
 class ItemVendaBase(BaseModel):
     produto_id: str
-    quantidade: int = Field(..., gt=0)
+    quantidade: int = Field(..., ge=0)
+    peso_kg: Optional[float] = Field(0.0, ge=0)
     preco_unitario: float = Field(..., gt=0)
     subtotal: float = Field(..., gt=0)
 
