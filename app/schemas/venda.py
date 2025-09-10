@@ -19,7 +19,7 @@ class ItemVendaResponse(ItemVendaBase):
     created_at: datetime
     updated_at: datetime
 
-    @field_validator('id', 'venda_id', mode='before')
+    @field_validator('id', 'venda_id', 'produto_id', mode='before')
     @classmethod
     def convert_uuid_to_str(cls, v):
         if isinstance(v, uuid.UUID):

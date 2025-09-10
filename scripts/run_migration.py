@@ -27,7 +27,7 @@ except Exception:
     settings = None
     SETTINGS_OK = False
 
-SQL_FILE = Path(__file__).with_name("migrate_permissions.sql")
+SQL_FILE = Path(__file__).with_name("add_peso_kg_column.sql")
 
 
 async def run():
@@ -45,7 +45,7 @@ async def run():
         if db_url.startswith("postgresql://"):
             db_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
 
-    print("\n=== MIGRATION: usuarios permissions ===")
+    print("\n=== MIGRATION: add peso_kg column ===")
     print(f"DB URL: {db_url}")
 
     engine = create_async_engine(db_url, echo=False, pool_pre_ping=True)

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func
 from app.db.session import AsyncSessionLocal
 from app.db.models import User
 from app.schemas.auth import Token
@@ -16,7 +17,10 @@ async def get_db_session():
 @router.post("/auth/login", response_model=Token, tags=["Auth"])
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db_session)):
     """Authenticate user and return a JWT access token."""
-    result = await db.execute(select(User).where(User.usuario == form_data.username))
+    # Case-insensitive username lookup to align with client behavior
+    result = await db.execute(
+        select(User).where(func.lower(User.usuario) == func.lower(func.cast(form_data.username, User.usuario.type)))
+    )
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(form_data.password, user.senha_hash):
@@ -25,6 +29,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Optional: block inactive users
+    # if not user.ativo:
+    #     raise HTTPException(status_code=403, detail="User is inactive")
 
     access_token = create_access_token(data={"sub": user.usuario, "user_id": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
