@@ -8,6 +8,15 @@ from datetime import datetime
 from ..db.database import get_db_session
 from ..db.models import User
 from ..schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse
+from werkzeug.security import generate_password_hash
+
+
+def _looks_like_hash(value: str) -> bool:
+    """Retorna True se a string parece um hash já pronto (pbkdf2/bcrypt)."""
+    if not value:
+        return False
+    v = str(value)
+    return v.startswith("pbkdf2:") or v.startswith("$2a$") or v.startswith("$2b$") or v.startswith("$2y$")
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"])
 
@@ -77,11 +86,14 @@ async def criar_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_d
         if existing_by_id.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Usuário já existe (mesmo id)")
         
+        # Se a senha já vier hasheada (ex.: sync offline), usar diretamente; caso contrário, gerar hash PBKDF2
+        senha_hash = usuario.senha if _looks_like_hash(usuario.senha) else generate_password_hash(usuario.senha)
+
         novo_usuario = User(
             id=usuario_uuid,
             nome=usuario.nome,
             usuario=usuario.usuario,
-            senha_hash=usuario.senha,  # Assumindo que já vem hasheada
+            senha_hash=senha_hash,
             is_admin=usuario.is_admin,
             ativo=True
         )
@@ -113,7 +125,10 @@ async def atualizar_usuario(usuario_id: str, usuario: UsuarioUpdate, db: AsyncSe
         if usuario.usuario is not None:
             update_data['usuario'] = usuario.usuario
         if usuario.senha is not None:
-            update_data['senha_hash'] = usuario.senha
+            # Se já for hash, salvar direto; senão, gerar hash PBKDF2
+            update_data['senha_hash'] = (
+                usuario.senha if _looks_like_hash(usuario.senha) else generate_password_hash(usuario.senha)
+            )
         if usuario.is_admin is not None:
             update_data['is_admin'] = usuario.is_admin
         if hasattr(usuario, 'ativo') and usuario.ativo is not None:
