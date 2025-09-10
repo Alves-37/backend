@@ -16,6 +16,11 @@ class User(DeclarativeBase):
     senha_hash: Mapped[str] = mapped_column(String, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Campos adicionais para alinhar com o cliente PDV3
+    nivel: Mapped[int] = mapped_column(Integer, default=1)
+    salario: Mapped[float] = mapped_column(Float, default=0.0)
+    pode_abastecer: Mapped[bool] = mapped_column(Boolean, default=False)
+    pode_gerenciar_despesas: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Produto(DeclarativeBase):

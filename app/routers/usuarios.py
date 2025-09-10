@@ -37,6 +37,10 @@ async def listar_usuarios(db: AsyncSession = Depends(get_db_session)):
                 'usuario': usuario.usuario,
                 'is_admin': usuario.is_admin,
                 'ativo': usuario.ativo,
+                'nivel': usuario.nivel,
+                'salario': usuario.salario,
+                'pode_abastecer': usuario.pode_abastecer,
+                'pode_gerenciar_despesas': usuario.pode_gerenciar_despesas,
                 'created_at': usuario.created_at.isoformat(),
                 'updated_at': usuario.updated_at.isoformat()
             }
@@ -95,7 +99,11 @@ async def criar_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_d
             usuario=usuario.usuario,
             senha_hash=senha_hash,
             is_admin=usuario.is_admin,
-            ativo=True
+            ativo=True,
+            nivel=usuario.nivel,
+            salario=usuario.salario,
+            pode_abastecer=usuario.pode_abastecer,
+            pode_gerenciar_despesas=usuario.pode_gerenciar_despesas
         )
         
         db.add(novo_usuario)
@@ -133,6 +141,14 @@ async def atualizar_usuario(usuario_id: str, usuario: UsuarioUpdate, db: AsyncSe
             update_data['is_admin'] = usuario.is_admin
         if hasattr(usuario, 'ativo') and usuario.ativo is not None:
             update_data['ativo'] = usuario.ativo
+        if hasattr(usuario, 'nivel') and usuario.nivel is not None:
+            update_data['nivel'] = usuario.nivel
+        if hasattr(usuario, 'salario') and usuario.salario is not None:
+            update_data['salario'] = usuario.salario
+        if hasattr(usuario, 'pode_abastecer') and usuario.pode_abastecer is not None:
+            update_data['pode_abastecer'] = usuario.pode_abastecer
+        if hasattr(usuario, 'pode_gerenciar_despesas') and usuario.pode_gerenciar_despesas is not None:
+            update_data['pode_gerenciar_despesas'] = usuario.pode_gerenciar_despesas
         
         update_data['updated_at'] = datetime.utcnow()
         
