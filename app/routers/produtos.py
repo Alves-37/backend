@@ -21,8 +21,8 @@ class ProdutoCreate(BaseModel):
     descricao: str = ""
     preco_custo: float = 0.0
     preco_venda: float
-    estoque: int = 0
-    estoque_minimo: int = 0
+    estoque: float = 0.0
+    estoque_minimo: float = 0.0
     categoria_id: Optional[int] = None
     venda_por_peso: bool = False
     unidade_medida: str = "un"
@@ -34,8 +34,8 @@ class ProdutoUpdate(BaseModel):
     descricao: Optional[str] = None
     preco_custo: Optional[float] = None
     preco_venda: Optional[float] = None
-    estoque: Optional[int] = None
-    estoque_minimo: Optional[int] = None
+    estoque: Optional[float] = None
+    estoque_minimo: Optional[float] = None
     categoria_id: Optional[int] = None
     venda_por_peso: Optional[bool] = None
     unidade_medida: Optional[str] = None
@@ -47,8 +47,8 @@ class ProdutoResponse(BaseModel):
     descricao: str = None
     preco_custo: float
     preco_venda: float
-    estoque: int
-    estoque_minimo: int
+    estoque: float
+    estoque_minimo: float
     categoria_id: int = None
     venda_por_peso: bool
     unidade_medida: str
