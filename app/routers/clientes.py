@@ -78,21 +78,20 @@ async def atualizar_cliente(cliente_id: str, cliente: ClienteUpdate, db: AsyncSe
         if not cliente_existente:
             raise HTTPException(status_code=404, detail="Cliente não encontrado")
         
-        # Atualizar campos
+        # Atualizar campos (usar chaves string para evitar 'keywords must be strings')
         update_data = {}
         if cliente.nome is not None:
-            update_data[Cliente.nome] = cliente.nome
+            update_data["nome"] = cliente.nome
         if cliente.documento is not None:
-            update_data[Cliente.documento] = cliente.documento
+            update_data["documento"] = cliente.documento
         if cliente.telefone is not None:
-            update_data[Cliente.telefone] = cliente.telefone
+            update_data["telefone"] = cliente.telefone
         if cliente.endereco is not None:
-            update_data[Cliente.endereco] = cliente.endereco
-        
-        update_data[Cliente.updated_at] = datetime.utcnow()
-        
+            update_data["endereco"] = cliente.endereco
+        update_data["updated_at"] = datetime.utcnow()
+
         await db.execute(
-            update(Cliente).where(Cliente.id == cliente_id).values(**update_data)
+            update(Cliente).where(Cliente.id == cliente_id).values(update_data)
         )
         await db.commit()
         
