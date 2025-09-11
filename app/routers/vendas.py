@@ -209,10 +209,8 @@ async def listar_vendas_usuario(
         # Query base
         stmt = select(Venda).options(selectinload(Venda.itens))
         
-        # Filtrar por usuário (se o campo existir)
-        # Como as vendas atuais não têm usuario_id, vamos retornar lista vazia por enquanto
-        # Isso pode ser ajustado quando o campo usuario_id for adicionado às vendas
-        stmt = stmt.where(Venda.id == "impossivel")  # Força lista vazia
+        # Filtrar por usuário
+        stmt = stmt.where(Venda.usuario_id == usuario_id)
         
         # Aplicar filtros de data se fornecidos
         if data_inicio:

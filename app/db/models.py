@@ -52,6 +52,7 @@ class Cliente(DeclarativeBase):
 class Venda(DeclarativeBase):
     __tablename__ = "vendas"
 
+    usuario_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
     cliente_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=True)
     total: Mapped[float] = mapped_column(Float, nullable=False)
     desconto: Mapped[float] = mapped_column(Float, default=0.0)
@@ -60,6 +61,7 @@ class Venda(DeclarativeBase):
     cancelada: Mapped[bool] = mapped_column(Boolean, default=False)
     
     # Relacionamentos
+    usuario: Mapped[Optional["User"]] = relationship("User")
     cliente: Mapped[Optional["Cliente"]] = relationship("Cliente", back_populates="vendas")
     itens: Mapped[list["ItemVenda"]] = relationship("ItemVenda", back_populates="venda")
 
