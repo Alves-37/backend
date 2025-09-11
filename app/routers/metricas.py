@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi import Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, date
@@ -21,17 +22,24 @@ def _now_ts() -> float:
     return datetime.utcnow().timestamp()
 
 @router.get("/vendas-dia")
-async def vendas_dia(db: AsyncSession = Depends(get_db_session)):
-    """Retorna o total de vendas (não canceladas) do dia atual."""
-    hoje = date.today()
+async def vendas_dia(
+    data: str | None = Query(default=None, description="Data no formato YYYY-MM-DD (timezone do cliente)"),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Retorna o total de vendas (não canceladas) do dia informado (ou dia atual)."""
+    # Data alvo: usar a recebida do cliente ou o dia do servidor
+    try:
+        alvo = date.fromisoformat(data) if data else date.today()
+    except Exception:
+        alvo = date.today()
     # Servir cache se fresco
     async with _cache_lock:
         if _metrics_cache["vendas_dia"]["value"] is not None and (_now_ts() - _metrics_cache["vendas_dia"]["ts"]) < _cache_ttl_seconds:
-            return {"data": str(hoje), "total": float(_metrics_cache["vendas_dia"]["value"]) }
+            return {"data": str(alvo), "total": float(_metrics_cache["vendas_dia"]["value"]) }
 
     stmt = select(func.coalesce(func.sum(Venda.total), 0.0)).where(
         Venda.cancelada == False,
-        func.date(Venda.created_at) == hoje
+        func.date(Venda.created_at) == alvo
     )
     # Tentativa principal + 1 retry leve
     for attempt in range(2):
@@ -40,7 +48,7 @@ async def vendas_dia(db: AsyncSession = Depends(get_db_session)):
             total = float(result.scalar() or 0.0)
             async with _cache_lock:
                 _metrics_cache["vendas_dia"] = {"value": total, "ts": _now_ts()}
-            return {"data": str(hoje), "total": total}
+            return {"data": str(alvo), "total": total}
         except Exception:
             if attempt == 0:
                 await asyncio.sleep(0.2)
@@ -48,16 +56,31 @@ async def vendas_dia(db: AsyncSession = Depends(get_db_session)):
             # Fallback: servir cache antigo se existir, senão 0
             async with _cache_lock:
                 cached = _metrics_cache["vendas_dia"]["value"]
-            return {"data": str(hoje), "total": float(cached or 0.0), "warning": "cached"}
+            return {"data": str(alvo), "total": float(cached or 0.0), "warning": "cached"}
 
 @router.get("/vendas-mes")
-async def vendas_mes(db: AsyncSession = Depends(get_db_session)):
-    """Retorna o total de vendas (não canceladas) do mês atual."""
+async def vendas_mes(
+    ano_mes: str | None = Query(default=None, description="Ano-mês no formato YYYY-MM (timezone do cliente)"),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Retorna o total de vendas (não canceladas) do mês informado (ou mês atual)."""
     try:
-        agora = datetime.utcnow()
-        primeiro_dia = date(agora.year, agora.month, 1)
+        if ano_mes:
+            try:
+                ano, mes = map(int, ano_mes.split("-"))
+                primeiro_dia = date(ano, mes, 1)
+            except Exception:
+                dnow = datetime.utcnow()
+                primeiro_dia = date(dnow.year, dnow.month, 1)
+        else:
+            dnow = datetime.utcnow()
+            primeiro_dia = date(dnow.year, dnow.month, 1)
         # próximo mês
-        proximo_mes = date(agora.year + (1 if agora.month == 12 else 0), 1 if agora.month == 12 else agora.month + 1, 1)
+        proximo_mes = date(
+            primeiro_dia.year + (1 if primeiro_dia.month == 12 else 0),
+            1 if primeiro_dia.month == 12 else primeiro_dia.month + 1,
+            1
+        )
         # Intervalo [primeiro_dia, proximo_mes)
         stmt = select(func.coalesce(func.sum(Venda.total), 0.0)).where(
             Venda.cancelada == False,
