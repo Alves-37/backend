@@ -67,8 +67,17 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
             except ValueError:
                 cliente_uuid = None
         
+        # Converter usuario_id se fornecido
+        usuario_uuid = None
+        if hasattr(venda, 'usuario_id') and venda.usuario_id:
+            try:
+                usuario_uuid = uuid.UUID(venda.usuario_id)
+            except ValueError:
+                usuario_uuid = None
+
         nova_venda = Venda(
             id=venda_uuid,
+            usuario_id=usuario_uuid,
             cliente_id=cliente_uuid,
             total=venda.total,
             desconto=venda.desconto or 0.0,
@@ -255,10 +264,9 @@ async def listar_vendas_periodo(
             func.date(Venda.created_at) <= data_fim
         )
         
-        # Filtrar por usuário se especificado (quando o campo existir)
+        # Filtrar por usuário se especificado
         if usuario_id is not None:
-            # Como as vendas atuais não têm usuario_id, ignorar este filtro por enquanto
-            pass
+            stmt = stmt.where(Venda.usuario_id == usuario_id)
         
         # Ordenar por data mais recente
         stmt = stmt.order_by(Venda.created_at.desc())

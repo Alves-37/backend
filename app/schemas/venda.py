@@ -34,6 +34,7 @@ class ItemVendaResponse(ItemVendaBase):
         }
 
 class VendaBase(BaseModel):
+    usuario_id: Optional[str] = None
     cliente_id: Optional[str] = None
     total: float = Field(..., gt=0)
     desconto: Optional[float] = Field(0.0, ge=0)
@@ -45,6 +46,7 @@ class VendaCreate(VendaBase):
     itens: Optional[List[ItemVendaCreate]] = []
 
 class VendaUpdate(BaseModel):
+    usuario_id: Optional[str] = None
     cliente_id: Optional[str] = None
     total: Optional[float] = Field(None, gt=0)
     desconto: Optional[float] = Field(None, ge=0)
