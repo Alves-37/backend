@@ -106,24 +106,22 @@ async def atualizar_cliente(cliente_id: str, cliente: ClienteUpdate, db: AsyncSe
 
 @router.delete("/{cliente_id}")
 async def deletar_cliente(cliente_id: str, db: AsyncSession = Depends(get_db_session)):
-    """Deleta um cliente (soft delete)."""
+    """Deleta um cliente (hard delete)."""
     try:
-        # Buscar cliente existente
+        # Buscar cliente existente (independente de ativo)
         result = await db.execute(select(Cliente).where(Cliente.id == cliente_id))
         cliente_existente = result.scalar_one_or_none()
         
         if not cliente_existente:
             raise HTTPException(status_code=404, detail="Cliente não encontrado")
         
-        # Soft delete
+        # Hard delete (remoção física)
         await db.execute(
-            update(Cliente)
-            .where(Cliente.id == cliente_id)
-            .values(ativo=False, updated_at=datetime.utcnow())
+            delete(Cliente).where(Cliente.id == cliente_id)
         )
         await db.commit()
         
-        return {"message": "Cliente deletado com sucesso"}
+        return {"message": "Cliente removido definitivamente"}
         
     except Exception as e:
         await db.rollback()
