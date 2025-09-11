@@ -8,7 +8,7 @@ from datetime import datetime
 
 from ..db.database import get_db_session
 from sqlalchemy.exc import IntegrityError
-from ..db.models import Venda, ItemVenda
+from ..db.models import Venda, ItemVenda, Produto
 from ..schemas.venda import VendaCreate, VendaUpdate, VendaResponse
 
 router = APIRouter(prefix="/api/vendas", tags=["vendas"])
@@ -89,10 +89,16 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
                 except (ValueError, TypeError):
                     raise HTTPException(status_code=400, detail=f"produto_id inválido: {item_data.produto_id}")
 
+                # Verificar existência do produto para evitar erro de FK
+                result_prod = await db.execute(select(Produto).where(Produto.id == produto_uuid))
+                produto_db = result_prod.scalar_one_or_none()
+                if not produto_db:
+                    raise HTTPException(status_code=400, detail=f"Produto inexistente no servidor: {item_data.produto_id}")
+
                 item = ItemVenda(
                     venda_id=nova_venda.id,
                     produto_id=produto_uuid,
-                    quantidade=item_data.quantidade,
+                    quantidade=max(1, int(item_data.quantidade or 0)),
                     peso_kg=getattr(item_data, 'peso_kg', 0.0),
                     preco_unitario=item_data.preco_unitario,
                     subtotal=item_data.subtotal
