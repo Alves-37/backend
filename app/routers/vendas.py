@@ -83,9 +83,15 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
         # Criar itens da venda se fornecidos
         if hasattr(venda, 'itens') and venda.itens:
             for item_data in venda.itens:
+                # Validar UUID de produto individualmente para evitar 500 genérico
+                try:
+                    produto_uuid = uuid.UUID(item_data.produto_id)
+                except (ValueError, TypeError):
+                    raise HTTPException(status_code=400, detail=f"produto_id inválido: {item_data.produto_id}")
+
                 item = ItemVenda(
                     venda_id=nova_venda.id,
-                    produto_id=uuid.UUID(item_data.produto_id),
+                    produto_id=produto_uuid,
                     quantidade=item_data.quantidade,
                     peso_kg=getattr(item_data, 'peso_kg', 0.0),
                     preco_unitario=item_data.preco_unitario,
