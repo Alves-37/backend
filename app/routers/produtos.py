@@ -229,35 +229,30 @@ async def update_produto(
 
 @router.delete("/{produto_uuid}")
 async def delete_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_session)):
-    """Deleta produto (soft delete)."""
+    """Deleta produto (hard delete: remoção física)."""
     try:
         # Converter UUID
         produto_id = uuid.UUID(produto_uuid)
-        
-        # Verificar se produto existe
+
+        # Verificar se produto existe (independente de ativo)
         result = await db.execute(
-            select(Produto).where(
-                Produto.id == produto_id,
-                Produto.ativo == True
-            )
+            select(Produto).where(Produto.id == produto_id)
         )
         produto = result.scalar_one_or_none()
-        
+
         if not produto:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Produto não encontrado"
             )
-        
-        # Soft delete
+
+        # Hard delete (remoção física)
         await db.execute(
-            update(Produto)
-            .where(Produto.id == produto_id)
-            .values(ativo=False, updated_at=datetime.utcnow())
+            delete(Produto).where(Produto.id == produto_id)
         )
         await db.commit()
-        
-        return {"message": "Produto deletado com sucesso"}
+
+        return {"message": "Produto removido definitivamente"}
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

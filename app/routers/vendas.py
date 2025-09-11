@@ -149,26 +149,108 @@ async def atualizar_venda(venda_id: str, venda: VendaUpdate, db: AsyncSession = 
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar venda: {str(e)}")
 
 @router.delete("/{venda_id}")
-async def cancelar_venda(venda_id: str, db: AsyncSession = Depends(get_db_session)):
-    """Cancela uma venda (soft delete)."""
+async def deletar_venda(venda_id: str, db: AsyncSession = Depends(get_db_session)):
+    """Deletar uma venda específica."""
     try:
-        # Buscar venda existente
-        result = await db.execute(select(Venda).where(Venda.id == venda_id))
-        venda_existente = result.scalar_one_or_none()
+        # Buscar a venda
+        stmt = select(Venda).where(Venda.id == venda_id)
+        result = await db.execute(stmt)
+        venda = result.scalar_one_or_none()
         
-        if not venda_existente:
+        if not venda:
             raise HTTPException(status_code=404, detail="Venda não encontrada")
         
-        # Cancelar venda
-        await db.execute(
-            update(Venda)
-            .where(Venda.id == venda_id)
-            .values(cancelada=True, updated_at=datetime.utcnow())
-        )
+        # Deletar itens da venda primeiro (devido à foreign key)
+        stmt_itens = delete(ItemVenda).where(ItemVenda.venda_id == venda_id)
+        await db.execute(stmt_itens)
+        
+        # Deletar a venda
+        await db.delete(venda)
         await db.commit()
         
-        return {"message": "Venda cancelada com sucesso"}
-        
+        return {"message": "Venda deletada com sucesso"}
+    except HTTPException:
+        raise
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Erro ao cancelar venda: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao deletar venda: {str(e)}")
+
+@router.get("/usuario/{usuario_id}")
+async def listar_vendas_usuario(
+    usuario_id: int,
+    data_inicio: str = None,
+    data_fim: str = None,
+    status_filter: str = None,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Listar vendas de um usuário específico com filtros opcionais."""
+    try:
+        # Query base
+        stmt = select(Venda).options(selectinload(Venda.itens))
+        
+        # Filtrar por usuário (se o campo existir)
+        # Como as vendas atuais não têm usuario_id, vamos retornar lista vazia por enquanto
+        # Isso pode ser ajustado quando o campo usuario_id for adicionado às vendas
+        stmt = stmt.where(Venda.id == "impossivel")  # Força lista vazia
+        
+        # Aplicar filtros de data se fornecidos
+        if data_inicio:
+            stmt = stmt.where(func.date(Venda.created_at) >= data_inicio)
+        if data_fim:
+            stmt = stmt.where(func.date(Venda.created_at) <= data_fim)
+            
+        # Aplicar filtro de status se fornecido
+        if status_filter:
+            if status_filter == "Não Fechadas":
+                stmt = stmt.where(Venda.cancelada == False)
+            elif status_filter == "Fechadas":
+                stmt = stmt.where(Venda.cancelada == True)
+        
+        # Ordenar por data mais recente
+        stmt = stmt.order_by(Venda.created_at.desc())
+        
+        result = await db.execute(stmt)
+        vendas = result.scalars().all()
+        
+        return [VendaResponse.model_validate(venda) for venda in vendas]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar vendas do usuário: {str(e)}")
+
+@router.get("/periodo")
+async def listar_vendas_periodo(
+    data_inicio: str,
+    data_fim: str,
+    usuario_id: int = None,
+    limit: int = None,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Listar vendas em um período específico com paginação."""
+    try:
+        # Query base
+        stmt = select(Venda).options(selectinload(Venda.itens))
+        
+        # Filtrar por período
+        stmt = stmt.where(
+            func.date(Venda.created_at) >= data_inicio,
+            func.date(Venda.created_at) <= data_fim
+        )
+        
+        # Filtrar por usuário se especificado (quando o campo existir)
+        if usuario_id is not None:
+            # Como as vendas atuais não têm usuario_id, ignorar este filtro por enquanto
+            pass
+        
+        # Ordenar por data mais recente
+        stmt = stmt.order_by(Venda.created_at.desc())
+        
+        # Aplicar paginação se especificada
+        if limit:
+            stmt = stmt.limit(limit).offset(offset)
+        
+        result = await db.execute(stmt)
+        vendas = result.scalars().all()
+        
+        return [VendaResponse.model_validate(venda) for venda in vendas]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar vendas do período: {str(e)}")
