@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 
 from ..db.database import get_db_session
+from sqlalchemy.exc import IntegrityError
 from ..db.models import Venda, ItemVenda
 from ..schemas.venda import VendaCreate, VendaUpdate, VendaResponse
 
@@ -96,6 +97,14 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
         await db.refresh(nova_venda)
         
         return nova_venda
+    except IntegrityError as ie:
+        # Possíveis causas: UUID duplicado, FK de produto inexistente, etc.
+        await db.rollback()
+        msg = str(ie.orig) if getattr(ie, 'orig', None) else str(ie)
+        # Quando for chave duplicada, retornar 409 para o cliente tratar como 'já existe'
+        if "duplicate key" in msg.lower() or "unique" in msg.lower():
+            raise HTTPException(status_code=409, detail=f"Venda já existe (conflito de chave): {msg}")
+        raise HTTPException(status_code=400, detail=f"Violação de integridade ao criar venda: {msg}")
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Erro ao criar venda: {str(e)}")
