@@ -37,7 +37,7 @@ railway up
 Configure estas variáveis no Railway Dashboard:
 
 ```
-DATABASE_URL=postgresql+asyncpg://postgres:PVVHzsCZDuQiwnuziBfcgukYLCuCxdau@interchange.proxy.rlwy.net:33939/railway
+DATABASE_URL=postgresql+asyncpg://postgres:sjwnmPdvRKIOuXTFBCyqRmVjEQgGfUzU@interchange.proxy.rlwy.net:50016/railway
 JWT_SECRET=a_very_secret_key_that_should_be_changed
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
@@ -51,7 +51,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=60
 
 **Usando o banco existente:**
 - O backend está configurado para usar o mesmo banco PostgreSQL já existente
-- `DATABASE_URL` já configurada: `postgresql+asyncpg://postgres:PVVHzsCZDuQiwnuziBfcgukYLCuCxdau@interchange.proxy.rlwy.net:33939/railway`
+- `DATABASE_URL` já configurada: `postgresql+asyncpg://postgres:sjwnmPdvRKIOuXTFBCyqRmVjEQgGfUzU@interchange.proxy.rlwy.net:50016/railway`
 - As tabelas serão criadas automaticamente na inicialização se não existirem
 
 ### 5. Health Check
