@@ -21,13 +21,13 @@ Há um caractere extra (`) no nome do banco de dados.
 3. Aba "Variables"
 4. Configure:
 ```
-DATABASE_URL=postgresql+asyncpg://postgres:sjwnmPdvRKIOuXTFBCyqRmVjEQgGfUzU@interchange.proxy.rlwy.net:50016/railway
+DATABASE_URL=postgresql+asyncpg://postgres:PVVHzsCZDuQiwnuziBfcgukYLCuCxdau@interchange.proxy.rlwy.net:33939/railway
 ```
 **Importante:** Remover qualquer caractere extra como ` ou espaços.
 
 ### Via Railway CLI:
 ```bash
-railway variables set DATABASE_URL="postgresql+asyncpg://postgres:sjwnmPdvRKIOuXTFBCyqRmVjEQgGfUzU@interchange.proxy.rlwy.net:50016/railway"
+railway variables set DATABASE_URL="postgresql+asyncpg://postgres:PVVHzsCZDuQiwnuziBfcgukYLCuCxdau@interchange.proxy.rlwy.net:33939/railway"
 ```
 
 ## 🌐 Testar o Backend

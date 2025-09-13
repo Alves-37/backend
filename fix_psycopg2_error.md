@@ -39,6 +39,6 @@ git push origin main
 ## ⚠️ Importante
 
 Certifique-se de que as variáveis de ambiente no Railway estejam configuradas:
-- `DATABASE_URL=postgresql+asyncpg://postgres:sjwnmPdvRKIOuXTFBCyqRmVjEQgGfUzU@interchange.proxy.rlwy.net:50016/railway`
+- `DATABASE_URL=postgresql+asyncpg://postgres:PVVHzsCZDuQiwnuziBfcgukYLCuCxdau@interchange.proxy.rlwy.net:33939/railway`
 
 O sistema agora usa asyncpg corretamente e não tentará mais usar psycopg2.

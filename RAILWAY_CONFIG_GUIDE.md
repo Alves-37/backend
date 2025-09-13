@@ -19,7 +19,7 @@
    **DATABASE_URL:**
    ```
    Nome: DATABASE_URL
-   Valor: postgresql+asyncpg://postgres:sjwnmPdvRKIOuXTFBCyqRmVjEQgGfUzU@interchange.proxy.rlwy.net:50016/railway
+   Valor: postgresql+asyncpg://postgres:PVVHzsCZDuQiwnuziBfcgukYLCuCxdau@interchange.proxy.rlwy.net:33939/railway
    ```
    
    **JWT_SECRET:**
@@ -53,7 +53,7 @@
 cd c:\Users\saide\sinc\backend
 
 # 2. Configurar variáveis uma por uma
-railway variables set DATABASE_URL="postgresql+asyncpg://postgres:sjwnmPdvRKIOuXTFBCyqRmVjEQgGfUzU@interchange.proxy.rlwy.net:50016/railway"
+railway variables set DATABASE_URL="postgresql+asyncpg://postgres:PVVHzsCZDuQiwnuziBfcgukYLCuCxdau@interchange.proxy.rlwy.net:33939/railway"
 
 railway variables set JWT_SECRET="a_very_secret_key_that_should_be_changed"
 

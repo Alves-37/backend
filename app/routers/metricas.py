@@ -6,7 +6,7 @@ from datetime import datetime, date
 import asyncio
 
 from ..db.database import get_db_session
-from ..db.models import Venda, ItemVenda
+from ..db.models import Venda, ItemVenda, Produto
 
 router = APIRouter(prefix="/api/metricas", tags=["metricas"]) 
 
@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/metricas", tags=["metricas"])
 _metrics_cache = {
     "vendas_dia": {"value": None, "ts": 0.0},
     "vendas_mes": {"value": None, "ts": 0.0},
+    "estoque_valores": {"value": None, "ts": 0.0},
 }
 _cache_ttl_seconds = 15
 _cache_lock = asyncio.Lock()
@@ -111,3 +112,42 @@ async def vendas_mes(
         async with _cache_lock:
             cached = _metrics_cache["vendas_mes"]["value"]
         return {"ano_mes": datetime.utcnow().strftime("%Y-%m"), "total": float(cached or 0.0), "warning": "cached"}
+
+@router.get("/estoque-valores")
+async def estoque_valores(db: AsyncSession = Depends(get_db_session)):
+    """Retorna o valor total do estoque (custo) e o valor potencial (preço de venda).
+    - valor_estoque: soma de preco_custo * estoque
+    - valor_potencial: soma de preco_venda * estoque
+    Considera apenas produtos ativos.
+    """
+    # Servir cache se fresco
+    async with _cache_lock:
+        if _metrics_cache["estoque_valores"]["value"] is not None and (_now_ts() - _metrics_cache["estoque_valores"]["ts"]) < _cache_ttl_seconds:
+            cached = _metrics_cache["estoque_valores"]["value"]
+            return {
+                "valor_estoque": float(cached["valor_estoque"]),
+                "valor_potencial": float(cached["valor_potencial"])
+            }
+
+    stmt = select(
+        func.coalesce(func.sum(Produto.preco_custo * Produto.estoque), 0.0),
+        func.coalesce(func.sum(Produto.preco_venda * Produto.estoque), 0.0)
+    ).where(Produto.ativo == True)
+
+    try:
+        result = await db.execute(stmt)
+        valor_custo, valor_venda = result.one()
+        payload = {
+            "valor_estoque": float(valor_custo or 0.0),
+            "valor_potencial": float(valor_venda or 0.0)
+        }
+        async with _cache_lock:
+            _metrics_cache["estoque_valores"] = {"value": payload, "ts": _now_ts()}
+        return payload
+    except Exception as e:
+        # Fallback: servir cache antigo se existir, senão zeros
+        async with _cache_lock:
+            cached = _metrics_cache["estoque_valores"]["value"]
+        if cached is not None:
+            return {"valor_estoque": float(cached.get("valor_estoque", 0.0)), "valor_potencial": float(cached.get("valor_potencial", 0.0)), "warning": "cached"}
+        raise HTTPException(status_code=500, detail=f"Erro ao calcular valores de estoque: {str(e)}")
