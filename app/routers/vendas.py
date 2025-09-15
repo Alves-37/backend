@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import selectinload
 from typing import List
 import uuid
@@ -8,7 +8,7 @@ from datetime import datetime
 
 from ..db.database import get_db_session
 from sqlalchemy.exc import IntegrityError
-from ..db.models import Venda, ItemVenda, Produto, Usuario
+from ..db.models import Venda, ItemVenda, Produto, User
 from ..schemas.venda import VendaCreate, VendaUpdate, VendaResponse
 
 router = APIRouter(prefix="/api/vendas", tags=["vendas"])
@@ -19,11 +19,21 @@ async def listar_vendas(db: AsyncSession = Depends(get_db_session)):
     try:
         result = await db.execute(
             select(Venda)
-            .options(selectinload(Venda.itens), selectinload(Venda.cliente))
+            .options(
+                selectinload(Venda.itens),
+                selectinload(Venda.cliente),
+                selectinload(Venda.usuario),
+            )
             .where(Venda.cancelada == False)
         )
         vendas = result.scalars().all()
-        return vendas
+        # Injetar nome do usuário (vendedor) para o schema incluir
+        for v in vendas:
+            try:
+                setattr(v, 'usuario_nome', getattr(getattr(v, 'usuario', None), 'nome', None))
+            except Exception:
+                setattr(v, 'usuario_nome', None)
+        return [VendaResponse.model_validate(v) for v in vendas]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao listar vendas: {str(e)}")
 
@@ -33,7 +43,11 @@ async def obter_venda(venda_id: str, db: AsyncSession = Depends(get_db_session))
     try:
         result = await db.execute(
             select(Venda)
-            .options(selectinload(Venda.itens), selectinload(Venda.cliente))
+            .options(
+                selectinload(Venda.itens),
+                selectinload(Venda.cliente),
+                selectinload(Venda.usuario),
+            )
             .where(Venda.id == venda_id)
         )
         venda = result.scalar_one_or_none()
@@ -41,7 +55,11 @@ async def obter_venda(venda_id: str, db: AsyncSession = Depends(get_db_session))
         if not venda:
             raise HTTPException(status_code=404, detail="Venda não encontrada")
         
-        return venda
+        try:
+            setattr(venda, 'usuario_nome', getattr(getattr(venda, 'usuario', None), 'nome', None))
+        except Exception:
+            setattr(venda, 'usuario_nome', None)
+        return VendaResponse.model_validate(venda)
     except ValueError:
         raise HTTPException(status_code=400, detail="ID de venda inválido")
     except Exception as e:
@@ -240,6 +258,13 @@ async def listar_vendas_usuario(
         result = await db.execute(stmt)
         vendas = result.scalars().all()
         
+        # Injetar atributo transitório 'usuario_nome' para o schema incluir
+        for v in vendas:
+            try:
+                setattr(v, 'usuario_nome', getattr(getattr(v, 'usuario', None), 'nome', None))
+            except Exception:
+                setattr(v, 'usuario_nome', None)
+        
         return [VendaResponse.model_validate(venda) for venda in vendas]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao buscar vendas do usuário: {str(e)}")
@@ -259,13 +284,13 @@ async def listar_vendas_periodo(
         stmt = (
             select(Venda)
             .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
-            .join(Usuario, Venda.usuario_id == Usuario.id, isouter=True)
+            .join(User, Venda.usuario_id == User.id, isouter=True)
         )
         
         # Filtrar por período
         stmt = stmt.where(
-            Venda.data_venda >= data_inicio,
-            Venda.data_venda <= data_fim
+            func.date(Venda.created_at) >= data_inicio,
+            func.date(Venda.created_at) <= data_fim
         )
         
         # Filtrar por usuário se especificado
@@ -273,7 +298,7 @@ async def listar_vendas_periodo(
             stmt = stmt.where(Venda.usuario_id == usuario_id)
         
         # Ordenar por data mais recente
-        stmt = stmt.order_by(Venda.data_venda.desc())
+        stmt = stmt.order_by(Venda.created_at.desc())
         
         # Aplicar paginação se especificada
         if limit:
@@ -281,6 +306,13 @@ async def listar_vendas_periodo(
         
         result = await db.execute(stmt)
         vendas = result.scalars().all()
+        
+        # Injetar atributo transitório 'usuario_nome' para o schema incluir
+        for v in vendas:
+            try:
+                setattr(v, 'usuario_nome', getattr(getattr(v, 'usuario', None), 'nome', None))
+            except Exception:
+                setattr(v, 'usuario_nome', None)
         
         return [VendaResponse.model_validate(venda) for venda in vendas]
     except Exception as e:
