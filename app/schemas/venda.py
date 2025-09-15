@@ -62,7 +62,7 @@ class VendaResponse(VendaBase):
     updated_at: datetime
     itens: List[ItemVendaResponse] = []
 
-    @field_validator('id', mode='before')
+    @field_validator('id', 'usuario_id', 'cliente_id', mode='before')
     @classmethod
     def convert_uuid_to_str(cls, v):
         if isinstance(v, uuid.UUID):

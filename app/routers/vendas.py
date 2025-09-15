@@ -166,6 +166,12 @@ async def atualizar_venda(venda_id: str, venda: VendaUpdate, db: AsyncSession = 
                 update_data[Venda.cliente_id] = uuid.UUID(venda.cliente_id) if venda.cliente_id else None
             except ValueError:
                 update_data[Venda.cliente_id] = None
+        # Atualizar usuario_id (UUID) se fornecido
+        if hasattr(venda, 'usuario_id') and venda.usuario_id is not None:
+            try:
+                update_data[Venda.usuario_id] = uuid.UUID(venda.usuario_id) if venda.usuario_id else None
+            except ValueError:
+                update_data[Venda.usuario_id] = None
         if venda.total is not None:
             update_data[Venda.total] = venda.total
         if venda.desconto is not None:
@@ -179,18 +185,24 @@ async def atualizar_venda(venda_id: str, venda: VendaUpdate, db: AsyncSession = 
         
         update_data[Venda.updated_at] = datetime.utcnow()
         
+        # IMPORTANTE: passar o dicionário diretamente (chaves são Column)
         await db.execute(
-            update(Venda).where(Venda.id == venda_id).values(**update_data)
+            update(Venda).where(Venda.id == venda_id).values(update_data)
         )
         await db.commit()
         
         # Retornar venda atualizada
         result = await db.execute(
             select(Venda)
-            .options(selectinload(Venda.itens), selectinload(Venda.cliente))
+            .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
             .where(Venda.id == venda_id)
         )
-        return result.scalar_one()
+        venda_atualizada = result.scalar_one()
+        try:
+            setattr(venda_atualizada, 'usuario_nome', getattr(getattr(venda_atualizada, 'usuario', None), 'nome', None))
+        except Exception:
+            setattr(venda_atualizada, 'usuario_nome', None)
+        return venda_atualizada
         
     except Exception as e:
         await db.rollback()
