@@ -56,6 +56,7 @@ class VendaUpdate(BaseModel):
 
 class VendaResponse(VendaBase):
     id: str
+    usuario_nome: Optional[str] = None
     cancelada: bool
     created_at: datetime
     updated_at: datetime

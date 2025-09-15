@@ -8,7 +8,7 @@ from datetime import datetime
 
 from ..db.database import get_db_session
 from sqlalchemy.exc import IntegrityError
-from ..db.models import Venda, ItemVenda, Produto
+from ..db.models import Venda, ItemVenda, Produto, Usuario
 from ..schemas.venda import VendaCreate, VendaUpdate, VendaResponse
 
 router = APIRouter(prefix="/api/vendas", tags=["vendas"])
@@ -255,13 +255,17 @@ async def listar_vendas_periodo(
 ):
     """Listar vendas em um período específico com paginação."""
     try:
-        # Query base
-        stmt = select(Venda).options(selectinload(Venda.itens))
+        # Query base com JOIN para buscar nome do usuário
+        stmt = (
+            select(Venda)
+            .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
+            .join(Usuario, Venda.usuario_id == Usuario.id, isouter=True)
+        )
         
         # Filtrar por período
         stmt = stmt.where(
-            func.date(Venda.created_at) >= data_inicio,
-            func.date(Venda.created_at) <= data_fim
+            Venda.data_venda >= data_inicio,
+            Venda.data_venda <= data_fim
         )
         
         # Filtrar por usuário se especificado
@@ -269,7 +273,7 @@ async def listar_vendas_periodo(
             stmt = stmt.where(Venda.usuario_id == usuario_id)
         
         # Ordenar por data mais recente
-        stmt = stmt.order_by(Venda.created_at.desc())
+        stmt = stmt.order_by(Venda.data_venda.desc())
         
         # Aplicar paginação se especificada
         if limit:
