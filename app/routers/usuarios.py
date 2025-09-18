@@ -7,6 +7,7 @@ from datetime import datetime
 
 from ..db.database import get_db_session
 from ..db.models import User
+from app.core.realtime import manager as realtime_manager
 from ..schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse
 from werkzeug.security import generate_password_hash
 
@@ -138,7 +139,25 @@ async def criar_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_d
         db.add(novo_usuario)
         await db.commit()
         await db.refresh(novo_usuario)
-        
+
+        # Broadcast realtime: usuario criado
+        try:
+            await realtime_manager.broadcast("usuario.created", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(novo_usuario.id),
+                    "nome": novo_usuario.nome,
+                    "usuario": novo_usuario.usuario,
+                    "is_admin": bool(novo_usuario.is_admin),
+                    "ativo": bool(novo_usuario.ativo),
+                    "pode_abastecer": bool(getattr(novo_usuario, 'pode_abastecer', False)),
+                    "pode_gerenciar_despesas": bool(getattr(novo_usuario, 'pode_gerenciar_despesas', False)),
+                    "updated_at": novo_usuario.updated_at.isoformat() if getattr(novo_usuario, 'updated_at', None) else None,
+                }
+            })
+        except Exception:
+            pass
+
         return novo_usuario
     except Exception as e:
         await db.rollback()
@@ -189,7 +208,27 @@ async def atualizar_usuario(usuario_id: str, usuario: UsuarioUpdate, db: AsyncSe
         
         # Retornar usuário atualizado
         result = await db.execute(select(User).where(User.id == usuario_id))
-        return result.scalar_one()
+        usuario_atualizado = result.scalar_one()
+
+        # Broadcast realtime: usuario atualizado
+        try:
+            await realtime_manager.broadcast("usuario.updated", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(usuario_atualizado.id),
+                    "nome": usuario_atualizado.nome,
+                    "usuario": usuario_atualizado.usuario,
+                    "is_admin": bool(usuario_atualizado.is_admin),
+                    "ativo": bool(usuario_atualizado.ativo),
+                    "pode_abastecer": bool(getattr(usuario_atualizado, 'pode_abastecer', False)),
+                    "pode_gerenciar_despesas": bool(getattr(usuario_atualizado, 'pode_gerenciar_despesas', False)),
+                    "updated_at": usuario_atualizado.updated_at.isoformat() if getattr(usuario_atualizado, 'updated_at', None) else None,
+                }
+            })
+        except Exception:
+            pass
+
+        return usuario_atualizado
         
     except Exception as e:
         await db.rollback()
@@ -213,7 +252,18 @@ async def deletar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_ses
             .values(ativo=False, updated_at=datetime.utcnow())
         )
         await db.commit()
-        
+
+        # Broadcast realtime: usuario deletado
+        try:
+            await realtime_manager.broadcast("usuario.deleted", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(usuario_id),
+                }
+            })
+        except Exception:
+            pass
+
         return {"message": "Usuário deletado com sucesso"}
         
     except Exception as e:
@@ -240,7 +290,22 @@ async def ativar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_sess
 
         # Retornar usuário atualizado
         result = await db.execute(select(User).where(User.id == usuario_id))
-        return result.scalar_one()
+        usuario_ativado = result.scalar_one()
+
+        # Broadcast realtime: usuario ativado
+        try:
+            await realtime_manager.broadcast("usuario.activated", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(usuario_ativado.id),
+                    "ativo": True,
+                    "updated_at": usuario_ativado.updated_at.isoformat() if getattr(usuario_ativado, 'updated_at', None) else None,
+                }
+            })
+        except Exception:
+            pass
+
+        return usuario_ativado
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Erro ao ativar usuário: {str(e)}")

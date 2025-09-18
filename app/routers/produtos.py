@@ -10,6 +10,7 @@ from datetime import datetime
 
 from app.db.database import get_db_session
 from app.db.models import Produto
+from app.core.realtime import manager as realtime_manager
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/produtos", tags=["Produtos"])
@@ -163,6 +164,22 @@ async def create_produto(produto_data: ProdutoCreate, db: AsyncSession = Depends
         await db.commit()
         await db.refresh(produto)
         
+        # Broadcast realtime: produto criado
+        try:
+            await realtime_manager.broadcast("produto.created", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(produto.id),
+                    "codigo": produto.codigo,
+                    "nome": produto.nome,
+                    "estoque": float(produto.estoque or 0),
+                    "preco_venda": float(produto.preco_venda or 0),
+                    "updated_at": produto.updated_at.isoformat() if produto.updated_at else None,
+                }
+            })
+        except Exception:
+            pass
+
         return ProdutoResponse.from_orm(produto)
     except HTTPException:
         raise
@@ -212,6 +229,22 @@ async def update_produto(
             await db.commit()
             await db.refresh(produto)
         
+        # Broadcast realtime: produto atualizado
+        try:
+            await realtime_manager.broadcast("produto.updated", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(produto.id),
+                    "codigo": produto.codigo,
+                    "nome": produto.nome,
+                    "estoque": float(produto.estoque or 0),
+                    "preco_venda": float(produto.preco_venda or 0),
+                    "updated_at": produto.updated_at.isoformat() if produto.updated_at else None,
+                }
+            })
+        except Exception:
+            pass
+
         return ProdutoResponse.from_orm(produto)
     except ValueError:
         raise HTTPException(
@@ -251,6 +284,17 @@ async def delete_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_se
             delete(Produto).where(Produto.id == produto_id)
         )
         await db.commit()
+
+        # Broadcast realtime: produto deletado
+        try:
+            await realtime_manager.broadcast("produto.deleted", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(produto_id),
+                }
+            })
+        except Exception:
+            pass
 
         return {"message": "Produto removido definitivamente"}
     except ValueError:

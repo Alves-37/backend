@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import selectinload
@@ -8,7 +8,8 @@ from datetime import datetime
 
 from ..db.database import get_db_session
 from sqlalchemy.exc import IntegrityError
-from ..db.models import Venda, ItemVenda, Produto, User
+from app.db.models import Produto, Venda, ItemVenda, User
+from app.core.realtime import manager as realtime_manager
 from ..schemas.venda import VendaCreate, VendaUpdate, VendaResponse
 
 router = APIRouter(prefix="/api/vendas", tags=["vendas"])
@@ -134,7 +135,25 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
         
         await db.commit()
         await db.refresh(nova_venda)
-        
+
+        # Broadcast evento em tempo real para clientes conectados
+        try:
+            payload = {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(nova_venda.id),
+                    "usuario_id": str(nova_venda.usuario_id) if getattr(nova_venda, 'usuario_id', None) else None,
+                    "total": float(nova_venda.total or 0),
+                    "desconto": float(nova_venda.desconto or 0),
+                    "forma_pagamento": nova_venda.forma_pagamento,
+                    "created_at": getattr(nova_venda, 'created_at', None).isoformat() if getattr(nova_venda, 'created_at', None) else None,
+                }
+            }
+            await realtime_manager.broadcast("venda.created", payload)
+        except Exception:
+            # Não falhar a requisição caso broadcast dê erro
+            pass
+
         return nova_venda
     except IntegrityError as ie:
         # Possíveis causas: UUID duplicado, FK de produto inexistente, etc.

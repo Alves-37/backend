@@ -7,6 +7,7 @@ from datetime import datetime
 
 from ..db.database import get_db_session
 from ..db.models import Cliente
+from app.core.realtime import manager as realtime_manager
 from ..schemas.cliente import ClienteCreate, ClienteUpdate, ClienteResponse
 
 router = APIRouter(prefix="/api/clientes", tags=["clientes"])
@@ -61,7 +62,22 @@ async def criar_cliente(cliente: ClienteCreate, db: AsyncSession = Depends(get_d
         db.add(novo_cliente)
         await db.commit()
         await db.refresh(novo_cliente)
-        
+
+        # Broadcast realtime: cliente criado
+        try:
+            await realtime_manager.broadcast("cliente.created", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(novo_cliente.id),
+                    "nome": novo_cliente.nome,
+                    "documento": novo_cliente.documento,
+                    "telefone": novo_cliente.telefone,
+                    "updated_at": novo_cliente.updated_at.isoformat() if getattr(novo_cliente, 'updated_at', None) else None,
+                }
+            })
+        except Exception:
+            pass
+
         return novo_cliente
     except Exception as e:
         await db.rollback()
@@ -97,7 +113,24 @@ async def atualizar_cliente(cliente_id: str, cliente: ClienteUpdate, db: AsyncSe
         
         # Retornar cliente atualizado
         result = await db.execute(select(Cliente).where(Cliente.id == cliente_id))
-        return result.scalar_one()
+        cliente_atualizado = result.scalar_one()
+
+        # Broadcast realtime: cliente atualizado
+        try:
+            await realtime_manager.broadcast("cliente.updated", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(cliente_atualizado.id),
+                    "nome": cliente_atualizado.nome,
+                    "documento": cliente_atualizado.documento,
+                    "telefone": cliente_atualizado.telefone,
+                    "updated_at": cliente_atualizado.updated_at.isoformat() if getattr(cliente_atualizado, 'updated_at', None) else None,
+                }
+            })
+        except Exception:
+            pass
+
+        return cliente_atualizado
         
     except Exception as e:
         await db.rollback()
@@ -119,7 +152,18 @@ async def deletar_cliente(cliente_id: str, db: AsyncSession = Depends(get_db_ses
             delete(Cliente).where(Cliente.id == cliente_id)
         )
         await db.commit()
-        
+
+        # Broadcast realtime: cliente deletado
+        try:
+            await realtime_manager.broadcast("cliente.deleted", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {
+                    "id": str(cliente_id),
+                }
+            })
+        except Exception:
+            pass
+
         return {"message": "Cliente removido definitivamente"}
         
     except Exception as e:
