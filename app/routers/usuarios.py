@@ -50,6 +50,35 @@ async def listar_usuarios(db: AsyncSession = Depends(get_db_session)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao listar usuários: {str(e)}")
 
+@router.get("/desativados", response_model=List[dict])
+async def listar_usuarios_desativados(db: AsyncSession = Depends(get_db_session)):
+    """Lista todos os usuários desativados (ativo = False)."""
+    try:
+        result = await db.execute(select(User).where(User.ativo == False))
+        usuarios = result.scalars().all()
+
+        usuarios_dict = []
+        for usuario in usuarios:
+            usuario_dict = {
+                'uuid': str(usuario.id),
+                'id': str(usuario.id),
+                'nome': usuario.nome,
+                'usuario': usuario.usuario,
+                'is_admin': usuario.is_admin,
+                'ativo': usuario.ativo,
+                'nivel': usuario.nivel,
+                'salario': usuario.salario,
+                'pode_abastecer': usuario.pode_abastecer,
+                'pode_gerenciar_despesas': usuario.pode_gerenciar_despesas,
+                'created_at': usuario.created_at.isoformat(),
+                'updated_at': usuario.updated_at.isoformat()
+            }
+            usuarios_dict.append(usuario_dict)
+
+        return usuarios_dict
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao listar usuários desativados: {str(e)}")
+
 @router.get("/{usuario_id}", response_model=UsuarioResponse)
 async def obter_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_session)):
     """Obtém um usuário específico por UUID."""
@@ -190,3 +219,28 @@ async def deletar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_ses
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Erro ao deletar usuário: {str(e)}")
+
+@router.put("/{usuario_id}/ativar", response_model=UsuarioResponse)
+async def ativar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_session)):
+    """Ativa um usuário (ativo = True)."""
+    try:
+        # Verificar existência
+        result = await db.execute(select(User).where(User.id == usuario_id))
+        usuario_existente = result.scalar_one_or_none()
+        if not usuario_existente:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        # Ativar
+        await db.execute(
+            update(User)
+            .where(User.id == usuario_id)
+            .values(ativo=True, updated_at=datetime.utcnow())
+        )
+        await db.commit()
+
+        # Retornar usuário atualizado
+        result = await db.execute(select(User).where(User.id == usuario_id))
+        return result.scalar_one()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro ao ativar usuário: {str(e)}")
