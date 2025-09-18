@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from app.routers import health, produtos, usuarios, clientes, vendas, auth
+from app.routers import health, produtos, usuarios, clientes, vendas, auth, categorias
 from app.routers import metricas
 from app.db.session import engine
 from app.db.base import DeclarativeBase
@@ -47,6 +47,7 @@ app.add_middleware(
 
 # Incluir routers
 app.include_router(health.router)
+app.include_router(categorias.router)
 app.include_router(produtos.router)
 app.include_router(usuarios.router)
 app.include_router(clientes.router)
