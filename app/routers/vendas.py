@@ -237,7 +237,7 @@ async def deletar_venda(venda_id: str, db: AsyncSession = Depends(get_db_session
 
 @router.get("/usuario/{usuario_id}")
 async def listar_vendas_usuario(
-    usuario_id: int,
+    usuario_id: str,
     data_inicio: str = None,
     data_fim: str = None,
     status_filter: str = None,
@@ -245,17 +245,36 @@ async def listar_vendas_usuario(
 ):
     """Listar vendas de um usuário específico com filtros opcionais."""
     try:
+        # Parse de UUID do usuário (ignorar filtro se inválido)
+        usuario_uuid = None
+        try:
+            usuario_uuid = uuid.UUID(usuario_id) if usuario_id else None
+        except Exception:
+            usuario_uuid = None
+
         # Query base
-        stmt = select(Venda).options(selectinload(Venda.itens))
-        
+        stmt = select(Venda).options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
+
         # Filtrar por usuário
-        stmt = stmt.where(Venda.usuario_id == usuario_id)
-        
-        # Aplicar filtros de data se fornecidos
+        if usuario_uuid is not None:
+            stmt = stmt.where(Venda.usuario_id == usuario_uuid)
+
+        # Aplicar filtros de data se fornecidos (intervalo [inicio, fim+1d))
         if data_inicio:
-            stmt = stmt.where(func.date(Venda.created_at) >= data_inicio)
+            try:
+                d1 = datetime.fromisoformat(f"{data_inicio}T00:00:00")
+            except Exception:
+                raise HTTPException(status_code=400, detail="data_inicio inválida. Use YYYY-MM-DD")
+            stmt = stmt.where(Venda.created_at >= d1)
         if data_fim:
-            stmt = stmt.where(func.date(Venda.created_at) <= data_fim)
+            try:
+                d2 = datetime.fromisoformat(f"{data_fim}T00:00:00")
+            except Exception:
+                raise HTTPException(status_code=400, detail="data_fim inválida. Use YYYY-MM-DD")
+            # fim exclusivo = dia seguinte 00:00
+            from datetime import timedelta
+            d2_exclusive = d2 + timedelta(days=1)
+            stmt = stmt.where(Venda.created_at < d2_exclusive)
             
         # Aplicar filtro de status se fornecido
         if status_filter:
@@ -285,29 +304,37 @@ async def listar_vendas_usuario(
 async def listar_vendas_periodo(
     data_inicio: str,
     data_fim: str,
-    usuario_id: int = None,
+    usuario_id: str = None,
     limit: int = None,
     offset: int = 0,
     db: AsyncSession = Depends(get_db_session)
 ):
     """Listar vendas em um período específico com paginação."""
     try:
-        # Query base com JOIN para buscar nome do usuário
-        stmt = (
-            select(Venda)
-            .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
-            .join(User, Venda.usuario_id == User.id, isouter=True)
-        )
-        
+        # Validar datas e construir intervalo [início, fim+1d)
+        try:
+            d1 = datetime.fromisoformat(f"{data_inicio}T00:00:00")
+            d2 = datetime.fromisoformat(f"{data_fim}T00:00:00")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Parâmetros de data inválidos. Use YYYY-MM-DD")
+
+        from datetime import timedelta
+        d2_exclusive = d2 + timedelta(days=1)
+
+        # Query base
+        stmt = select(Venda).options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
+
         # Filtrar por período
-        stmt = stmt.where(
-            func.date(Venda.created_at) >= data_inicio,
-            func.date(Venda.created_at) <= data_fim
-        )
-        
-        # Filtrar por usuário se especificado
+        stmt = stmt.where(Venda.created_at >= d1, Venda.created_at < d2_exclusive)
+
+        # Filtrar por usuário se especificado e válido (UUID)
         if usuario_id is not None:
-            stmt = stmt.where(Venda.usuario_id == usuario_id)
+            try:
+                usuario_uuid = uuid.UUID(usuario_id)
+                stmt = stmt.where(Venda.usuario_id == usuario_uuid)
+            except Exception:
+                # Ignora filtro se não for UUID válido
+                pass
         
         # Ordenar por data mais recente
         stmt = stmt.order_by(Venda.created_at.desc())
