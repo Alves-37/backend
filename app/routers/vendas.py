@@ -37,7 +37,7 @@ async def listar_vendas(db: AsyncSession = Depends(get_db_session)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao listar vendas: {str(e)}")
 
-@router.get("/{venda_id}", response_model=VendaResponse)
+@router.get("/id/{venda_id}", response_model=VendaResponse)
 async def obter_venda(venda_id: str, db: AsyncSession = Depends(get_db_session)):
     """Obtém uma venda específica por UUID."""
     try:
@@ -293,13 +293,20 @@ async def listar_vendas_usuario(
         vendas = result.scalars().all()
         
         # Injetar atributo transitório 'usuario_nome' para o schema incluir
+        respostas = []
         for v in vendas:
             try:
                 setattr(v, 'usuario_nome', getattr(getattr(v, 'usuario', None), 'nome', None))
             except Exception:
                 setattr(v, 'usuario_nome', None)
+            # Serialização resiliente: ignora registros quebrados
+            try:
+                respostas.append(VendaResponse.model_validate(v))
+            except Exception:
+                # opcional: logar
+                continue
         
-        return [VendaResponse.model_validate(venda) for venda in vendas]
+        return respostas
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao buscar vendas do usuário: {str(e)}")
 
@@ -353,12 +360,18 @@ async def listar_vendas_periodo(
         vendas = result.scalars().all()
         
         # Injetar atributo transitório 'usuario_nome' para o schema incluir
+        respostas = []
         for v in vendas:
             try:
                 setattr(v, 'usuario_nome', getattr(getattr(v, 'usuario', None), 'nome', None))
             except Exception:
                 setattr(v, 'usuario_nome', None)
+            try:
+                respostas.append(VendaResponse.model_validate(v))
+            except Exception:
+                # Ignora registros com dados inconsistentes
+                continue
         
-        return [VendaResponse.model_validate(venda) for venda in vendas]
+        return respostas
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao buscar vendas do período: {str(e)}")

@@ -7,8 +7,9 @@ class ItemVendaBase(BaseModel):
     produto_id: str
     quantidade: int = Field(..., ge=0)
     peso_kg: Optional[float] = Field(0.0, ge=0)
-    preco_unitario: float = Field(..., gt=0)
-    subtotal: float = Field(..., gt=0)
+    # Permitir zero para compatibilidade com dados antigos
+    preco_unitario: float = Field(..., ge=0)
+    subtotal: float = Field(..., ge=0)
 
 class ItemVendaCreate(ItemVendaBase):
     pass
@@ -24,6 +25,14 @@ class ItemVendaResponse(ItemVendaBase):
     def convert_uuid_to_str(cls, v):
         if isinstance(v, uuid.UUID):
             return str(v)
+        return v
+
+    @field_validator('preco_unitario', 'subtotal', 'peso_kg', 'quantidade', mode='before')
+    @classmethod
+    def default_zeros(cls, v):
+        # Normaliza None para 0 para evitar erros de validação vindos do banco
+        if v is None:
+            return 0
         return v
 
     class Config:
@@ -43,7 +52,7 @@ class VendaBase(BaseModel):
 
 class VendaCreate(VendaBase):
     uuid: Optional[str] = None
-    itens: Optional[List[ItemVendaCreate]] = []
+    itens: Optional[List[ItemVendaCreate]] = Field(default_factory=list)
 
 class VendaUpdate(BaseModel):
     usuario_id: Optional[str] = None
@@ -60,7 +69,7 @@ class VendaResponse(VendaBase):
     cancelada: bool
     created_at: datetime
     updated_at: datetime
-    itens: List[ItemVendaResponse] = []
+    itens: List[ItemVendaResponse] = Field(default_factory=list)
 
     @field_validator('id', 'usuario_id', 'cliente_id', mode='before')
     @classmethod
