@@ -282,6 +282,9 @@ async def listar_vendas_usuario(
                 stmt = stmt.where(Venda.cancelada == False)
             elif status_filter == "Fechadas":
                 stmt = stmt.where(Venda.cancelada == True)
+        else:
+            # Padrão: somente não canceladas (consistente com listar_vendas)
+            stmt = stmt.where(Venda.cancelada == False)
         
         # Ordenar por data mais recente
         stmt = stmt.order_by(Venda.created_at.desc())
@@ -326,6 +329,9 @@ async def listar_vendas_periodo(
 
         # Filtrar por período
         stmt = stmt.where(Venda.created_at >= d1, Venda.created_at < d2_exclusive)
+
+        # Padrão: excluir vendas canceladas (consistente com listar_vendas)
+        stmt = stmt.where(Venda.cancelada == False)
 
         # Filtrar por usuário se especificado e válido (UUID)
         if usuario_id is not None:
