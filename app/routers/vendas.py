@@ -238,6 +238,10 @@ async def deletar_venda(venda_id: str, db: AsyncSession = Depends(get_db_session
         
         if not venda:
             raise HTTPException(status_code=404, detail="Venda não encontrada")
+
+        # Regra: só pode excluir se já estiver anulada/cancelada
+        if not bool(getattr(venda, 'cancelada', False)):
+            raise HTTPException(status_code=400, detail="Somente vendas ANULADAS podem ser excluídas")
         
         # Deletar itens da venda primeiro (devido à foreign key)
         stmt_itens = delete(ItemVenda).where(ItemVenda.venda_id == venda_id)
@@ -246,7 +250,16 @@ async def deletar_venda(venda_id: str, db: AsyncSession = Depends(get_db_session
         # Deletar a venda
         await db.delete(venda)
         await db.commit()
-        
+
+        # Broadcast realtime: venda deletada (antes do return)
+        try:
+            await realtime_manager.broadcast("venda.deleted", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {"id": str(venda_id)}
+            })
+        except Exception:
+            pass
+
         return {"message": "Venda deletada com sucesso"}
     except HTTPException:
         raise
@@ -394,3 +407,46 @@ async def listar_vendas_periodo(
         return respostas
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao buscar vendas do período: {str(e)}")
+
+@router.put("/{venda_id}/cancelar", response_model=VendaResponse)
+async def cancelar_venda(venda_id: str, db: AsyncSession = Depends(get_db_session)):
+    """Anula (cancela) uma venda (cancelada=True)."""
+    try:
+        # Atualizar flag cancelada
+        await db.execute(
+            update(Venda)
+            .where(Venda.id == venda_id)
+            .values({Venda.cancelada: True, Venda.updated_at: datetime.utcnow()})
+        )
+        await db.commit()
+
+        # Retornar venda atualizada
+        result = await db.execute(
+            select(Venda)
+            .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
+            .where(Venda.id == venda_id)
+        )
+        venda_atualizada = result.scalar_one_or_none()
+        if not venda_atualizada:
+            raise HTTPException(status_code=404, detail="Venda não encontrada")
+
+        try:
+            setattr(venda_atualizada, 'usuario_nome', getattr(getattr(venda_atualizada, 'usuario', None), 'nome', None))
+        except Exception:
+            setattr(venda_atualizada, 'usuario_nome', None)
+
+        # Broadcast realtime: venda cancelada
+        try:
+            await realtime_manager.broadcast("venda.cancelled", {
+                "ts": datetime.utcnow().isoformat(),
+                "data": {"id": str(venda_atualizada.id), "cancelada": True}
+            })
+        except Exception:
+            pass
+
+        return venda_atualizada
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro ao cancelar venda: {str(e)}")

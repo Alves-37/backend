@@ -9,6 +9,7 @@ import os
 from dotenv import load_dotenv
 import sys
 from datetime import datetime
+import subprocess
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -23,15 +24,34 @@ class DatabaseReset:
         if self.database_url.startswith('postgresql+asyncpg://'):
             self.database_url = self.database_url.replace('postgresql+asyncpg://', 'postgresql://')
     
-    async def connect(self):
-        """Conectar ao banco PostgreSQL"""
-        try:
-            self.conn = await asyncpg.connect(self.database_url)
-            print("✅ Conectado ao banco PostgreSQL online")
-            return True
-        except Exception as e:
-            print(f"❌ Erro ao conectar: {e}")
-            return False
+    async def connect(self, retries: int = 3, base_delay: float = 1.5):
+        """Conectar ao banco PostgreSQL com retry e timeout."""
+        last_err = None
+        for attempt in range(1, retries + 1):
+            try:
+                # timeout geral de conexão (segundos)
+                self.conn = await asyncpg.connect(self.database_url, timeout=10)
+                print("✅ Conectado ao banco PostgreSQL online")
+                return True
+            except Exception as e:
+                last_err = e
+                msg = str(e)
+                print(f"❌ Erro ao conectar (tentativa {attempt}/{retries}): {msg}")
+                
+                # Dicas específicas para erros comuns em Windows/rede
+                if "WinError 64" in msg:
+                    print("   💡 Dica: 'O nome de rede especificado já não está disponível' indica instabilidade de rede/VPN/Firewall.")
+                    print("   - Verifique sua conexão, VPN/Proxy e tente novamente.")
+                if "TLS handshake timeout" in msg or "handshake" in msg:
+                    print("   💡 Dica: Timeout de TLS. Rede lenta/instável ou bloqueio de firewall.")
+                    print("   - Tente novamente, verifique internet/antivírus/firewall.")
+
+                if attempt < retries:
+                    delay = base_delay * attempt
+                    print(f"   ⏳ Aguardando {delay:.1f}s para nova tentativa...")
+                    await asyncio.sleep(delay)
+        print("❌ Falha ao conectar após múltiplas tentativas.")
+        return False
     
     async def close(self):
         """Fechar conexão"""
