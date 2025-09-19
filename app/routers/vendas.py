@@ -102,7 +102,9 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
             desconto=venda.desconto or 0.0,
             forma_pagamento=venda.forma_pagamento,
             observacoes=venda.observacoes,
-            cancelada=False
+            cancelada=False,
+            # Preservar a data original da venda, se enviada pelo cliente
+            created_at=venda.created_at if getattr(venda, 'created_at', None) else None
         )
         
         db.add(nova_venda)
@@ -155,6 +157,10 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
             pass
 
         return nova_venda
+    except HTTPException as he:
+        # Propagar erros HTTP explícitos (ex.: produto inexistente -> 400)
+        await db.rollback()
+        raise he
     except IntegrityError as ie:
         # Possíveis causas: UUID duplicado, FK de produto inexistente, etc.
         await db.rollback()

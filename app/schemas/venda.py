@@ -53,6 +53,7 @@ class VendaBase(BaseModel):
 class VendaCreate(VendaBase):
     uuid: Optional[str] = None
     itens: Optional[List[ItemVendaCreate]] = Field(default_factory=list)
+    created_at: Optional[datetime] = None
 
 class VendaUpdate(BaseModel):
     usuario_id: Optional[str] = None
