@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi import Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from datetime import datetime, date
 import asyncio
 
 from ..db.database import get_db_session
-from ..db.models import Venda, ItemVenda
+from ..db.models import Venda, ItemVenda, Produto
 
 router = APIRouter(prefix="/api/metricas", tags=["metricas"]) 
 
@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/metricas", tags=["metricas"])
 _metrics_cache = {
     "vendas_dia": {"value": None, "ts": 0.0},
     "vendas_mes": {"value": None, "ts": 0.0},
+    "estoque": {"value": None, "ts": 0.0},
 }
 _cache_ttl_seconds = 15
 _cache_lock = asyncio.Lock()
@@ -111,3 +112,70 @@ async def vendas_mes(
         async with _cache_lock:
             cached = _metrics_cache["vendas_mes"]["value"]
         return {"ano_mes": datetime.utcnow().strftime("%Y-%m"), "total": float(cached or 0.0), "warning": "cached"}
+
+
+@router.get("/estoque")
+async def estoque_metricas(db: AsyncSession = Depends(get_db_session)):
+    """
+    Retorna métricas de estoque calculadas no servidor para garantir paridade entre clientes:
+    - valor_estoque: SUM(estoque * preco_custo) de produtos ativos com estoque > 0
+    - valor_potencial: SUM(estoque * preco_venda) idem
+    - lucro_potencial: valor_potencial - valor_estoque
+    - baixo_estoque: contagem de produtos ativos considerados baixo estoque
+        Regra: se estoque_minimo > 0, usa estoque <= estoque_minimo; senão, usa estoque <= 5
+    """
+    # Servir cache se estiver fresco
+    async with _cache_lock:
+        if _metrics_cache["estoque"]["value"] is not None and (_now_ts() - _metrics_cache["estoque"]["ts"]) < _cache_ttl_seconds:
+            return _metrics_cache["estoque"]["value"]
+
+    # Expressões
+    valor_custo_expr = func.coalesce(func.sum(Produto.estoque * Produto.preco_custo), 0.0)
+    valor_venda_expr = func.coalesce(func.sum(Produto.estoque * Produto.preco_venda), 0.0)
+
+    cond_min_def = (
+        (Produto.estoque_minimo != None)
+        & (Produto.estoque_minimo > 0)
+        & (Produto.estoque <= Produto.estoque_minimo)
+    )
+    cond_sem_min = (
+        ((Produto.estoque_minimo == None) | (Produto.estoque_minimo == 0))
+        & (Produto.estoque <= 5)
+    )
+    cond_baixo = cond_min_def | cond_sem_min
+    baixo_estoque_expr = func.coalesce(
+        func.sum(
+            case(
+                (cond_baixo, 1),
+                else_=0,
+            )
+        ),
+        0,
+    )
+
+    stmt = (
+        select(valor_custo_expr.label("valor_custo"), valor_venda_expr.label("valor_venda"), baixo_estoque_expr.label("baixo_estoque"))
+        .where(Produto.ativo == True, Produto.estoque > 0)
+    )
+
+    try:
+        result = await db.execute(stmt)
+        row = result.first()
+        valor_estoque = float(row.valor_custo if row and row.valor_custo is not None else 0.0)
+        valor_potencial = float(row.valor_venda if row and row.valor_venda is not None else 0.0)
+        baixo_estoque = int(row.baixo_estoque if row and row.baixo_estoque is not None else 0)
+
+        payload = {
+            "valor_estoque": valor_estoque,
+            "valor_potencial": valor_potencial,
+            "lucro_potencial": float(valor_potencial - valor_estoque),
+            "baixo_estoque": baixo_estoque,
+        }
+        async with _cache_lock:
+            _metrics_cache["estoque"] = {"value": payload, "ts": _now_ts()}
+        return payload
+    except Exception as e:
+        # Fallback para cache/zeros
+        async with _cache_lock:
+            cached = _metrics_cache["estoque"]["value"]
+        return cached or {"valor_estoque": 0.0, "valor_potencial": 0.0, "lucro_potencial": 0.0, "baixo_estoque": 0}
