@@ -16,9 +16,10 @@ load_dotenv()
 
 class DatabaseReset:
     def __init__(self):
-        self.database_url = os.getenv('DATABASE_URL')
+        # Preferir DATABASE_URL; fallback para DATABASE_PUBLIC_URL
+        self.database_url = os.getenv('DATABASE_URL') or os.getenv('DATABASE_PUBLIC_URL')
         if not self.database_url:
-            raise ValueError("DATABASE_URL não encontrada no arquivo .env")
+            raise ValueError("DATABASE_URL/DATABASE_PUBLIC_URL não encontrada no arquivo .env")
         
         # Converter para asyncpg format se necessário
         if self.database_url.startswith('postgresql+asyncpg://'):

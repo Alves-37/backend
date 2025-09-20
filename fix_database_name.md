@@ -33,9 +33,9 @@ railway variables set DATABASE_URL="postgresql+asyncpg://postgres:PVVHzsCZDuQiwn
 ## 🌐 Testar o Backend
 
 Após configurar a variável, teste:
-- **Health Check:** https://prototipo-production-c729.up.railway.app/healthz
-- **Produtos:** https://prototipo-production-c729.up.railway.app/api/produtos/
-- **Usuários:** https://prototipo-production-c729.up.railway.app/api/usuarios/
+- **Health Check:** https://backend-production-3b13.up.railway.app/healthz
+- **Produtos:** https://backend-production-3b13.up.railway.app/api/produtos/
+- **Usuários:** https://backend-production-3b13.up.railway.app/api/usuarios/
 
 ## 🎯 Próximos Passos
 
