@@ -262,7 +262,7 @@ async def update_produto(
 
 @router.delete("/{produto_uuid}")
 async def delete_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_session)):
-    """Deleta produto (hard delete: remoção física)."""
+    """Soft delete de produto: marca como inativo para evitar quebra de FKs."""
     try:
         # Converter UUID
         produto_id = uuid.UUID(produto_uuid)
@@ -279,24 +279,31 @@ async def delete_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_se
                 detail="Produto não encontrado"
             )
 
-        # Hard delete (remoção física)
+        # Se já está inativo, apenas confirme operação idempotente
+        if produto.ativo is False:
+            return {"message": "Produto já estava inativo"}
+
+        # Soft delete: marcar ativo = False e atualizar updated_at
         await db.execute(
-            delete(Produto).where(Produto.id == produto_id)
+            update(Produto)
+            .where(Produto.id == produto_id)
+            .values(ativo=False, updated_at=datetime.utcnow())
         )
         await db.commit()
 
-        # Broadcast realtime: produto deletado
+        # Broadcast realtime: produto deletado (soft)
         try:
             await realtime_manager.broadcast("produto.deleted", {
                 "ts": datetime.utcnow().isoformat(),
                 "data": {
                     "id": str(produto_id),
+                    "soft": True,
                 }
             })
         except Exception:
             pass
 
-        return {"message": "Produto removido definitivamente"}
+        return {"message": "Produto marcado como inativo (soft delete)"}
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
