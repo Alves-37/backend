@@ -16,7 +16,7 @@ git push origin main
 echo.
 echo ✅ Deploy finalizado!
 echo.
-echo Backend deployado em: https://backend-production-3b13.up.railway.app
+echo Backend deployado em: https://prototipo-production-c729.up.railway.app
 echo.
 echo Próximos passos:
 echo - Testar endpoints da API
