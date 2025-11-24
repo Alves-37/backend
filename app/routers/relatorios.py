@@ -1,6 +1,8 @@
 from io import BytesIO
 from typing import List
 from datetime import datetime, timedelta
+import uuid
+import csv
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -9,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db_session
-from app.db.models import Produto, Venda, ItemVenda, User
+from app.db.models import Produto, Venda, ItemVenda, User, Cliente
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -261,4 +263,86 @@ async def relatorio_financeiro(
         BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=relatorio_financeiro.pdf"},
+    )
+
+
+@router.get("/faturas-mensal", response_class=StreamingResponse)
+async def exportar_faturas_mensal(
+    ano: int,
+    mes: int,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Exporta faturas (vendas não canceladas) de um mês em CSV para apoio contabilístico/AT.
+
+    Ainda não é SAF-T, mas já consolida os dados fiscais básicos por documento.
+    """
+    try:
+        # Período [inicio, fim+1d)
+        d1 = datetime(ano, mes, 1)
+        if mes == 12:
+            d2 = datetime(ano + 1, 1, 1)
+        else:
+            d2 = datetime(ano, mes + 1, 1)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Parâmetros de ano/mês inválidos")
+
+    stmt = (
+        select(Venda)
+        .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
+        .where(Venda.created_at >= d1, Venda.created_at < d2, Venda.cancelada == False)
+        .order_by(Venda.created_at.asc())
+    )
+
+    result = await db.execute(stmt)
+    vendas = result.scalars().all()
+
+    buffer = BytesIO()
+    writer = csv.writer(buffer, delimiter=';', lineterminator='\n')
+
+    # Cabeçalho CSV
+    writer.writerow([
+        "data_hora",
+        "id_venda",
+        "vendedor",
+        "cliente_nome",
+        "cliente_documento",
+        "forma_pagamento",
+        "total",
+        "desconto",
+        "observacoes",
+    ])
+
+    for v in vendas:
+        dt = getattr(v, "created_at", None)
+        data_str = dt.strftime("%Y-%m-%d %H:%M:%S") if isinstance(dt, datetime) else ""
+        vendedor = getattr(getattr(v, "usuario", None), "nome", "") or "-"
+        cliente_nome = getattr(getattr(v, "cliente", None), "nome", "") or "-"
+        cliente_doc = getattr(getattr(v, "cliente", None), "documento", "") or ""
+        forma = v.forma_pagamento or "-"
+        total = float(v.total or 0)
+        desconto = float(v.desconto or 0)
+        obs = v.observacoes or ""
+
+        writer.writerow([
+            data_str,
+            str(getattr(v, "id", "")),
+            vendedor,
+            cliente_nome,
+            cliente_doc,
+            forma,
+            f"{total:.2f}",
+            f"{desconto:.2f}",
+            obs.replace('\n', ' ').replace('\r', ' '),
+        ])
+
+    buffer.seek(0)
+    filename = f"faturas_{ano}_{mes:02d}.csv"
+
+    return StreamingResponse(
+        buffer,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Cache-Control": "no-cache",
+        },
     )
