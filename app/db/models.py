@@ -88,5 +88,16 @@ class ItemVenda(DeclarativeBase):
     produto: Mapped["Produto"] = relationship("Produto")
 
 
+class EmpresaConfig(DeclarativeBase):
+    __tablename__ = "empresa_config"
+
+    nome: Mapped[str] = mapped_column(String(200), default="")
+    nuit: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    telefone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    endereco: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    logo_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+
 # Adicionar relacionamentos reversos
 Cliente.vendas = relationship("Venda", back_populates="cliente")

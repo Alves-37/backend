@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.routers import health, produtos, usuarios, clientes, vendas, auth, categorias, ws
-from app.routers import metricas, relatorios
+from app.routers import metricas, relatorios, empresa_config, admin
 from app.db.session import engine
 from app.db.base import DeclarativeBase
 
@@ -56,6 +56,8 @@ app.include_router(metricas.router)
 app.include_router(auth.router)
 app.include_router(ws.router)
 app.include_router(relatorios.router)
+app.include_router(empresa_config.router)
+app.include_router(admin.router)
 
 @app.get("/")
 async def read_root():
