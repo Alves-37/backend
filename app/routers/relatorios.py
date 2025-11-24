@@ -3,6 +3,7 @@ from typing import List
 from datetime import datetime, timedelta
 import uuid
 import csv
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -16,10 +17,33 @@ from app.db.models import Produto, Venda, ItemVenda, User, Cliente
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib import colors
 
 router = APIRouter(prefix="/api/relatorios", tags=["relatorios"])
+
+
+LOGO_PATH = Path(__file__).resolve().parents[2] / "img" / "nelson.jpg"
+
+
+def _add_header(story, styles, titulo: str, subtitulo: str | None = None):
+    """Adiciona cabeçalho padrão com logo + título opcionalmente subtítulo."""
+    header_elems = []
+    if LOGO_PATH.exists():
+        try:
+            logo = Image(str(LOGO_PATH), width=25 * mm, height=25 * mm)
+            header_elems.append(logo)
+        except Exception:
+            pass
+    header_elems.append(Paragraph(titulo, styles["Title"]))
+    if subtitulo:
+        header_elems.append(Paragraph(subtitulo, styles["Normal"]))
+
+    # Se tiver logo e texto, alinhar em coluna
+    for elem in header_elems:
+        story.append(elem)
+        story.append(Spacer(1, 4))
+    story.append(Spacer(1, 8))
 
 
 def _build_produtos_pdf(produtos: List[Produto], titulo: str) -> bytes:
@@ -30,8 +54,7 @@ def _build_produtos_pdf(produtos: List[Produto], titulo: str) -> bytes:
     styles = getSampleStyleSheet()
     story = []
 
-    story.append(Paragraph(titulo, styles["Title"]))
-    story.append(Spacer(1, 12))
+    _add_header(story, styles, titulo)
 
     data = [["Código", "Nome", "Preço venda", "Estoque", "Estoque mín."]]
     for p in produtos:
@@ -129,9 +152,9 @@ async def relatorio_vendas(
     styles = getSampleStyleSheet()
     story = []
 
-    titulo = f"Relatório de Vendas ({data_inicio} a {data_fim})"
-    story.append(Paragraph(titulo, styles["Title"]))
-    story.append(Spacer(1, 8))
+    titulo = "Relatório de Vendas"
+    subtitulo = f"Período: {data_inicio} a {data_fim}"
+    _add_header(story, styles, titulo, subtitulo)
 
     header = ["Data", "Vendedor", "Cliente", "Forma pag.", "Total (MT)"]
     data = [header]
@@ -231,9 +254,9 @@ async def relatorio_financeiro(
     styles = getSampleStyleSheet()
     story = []
 
-    titulo = f"Relatório Financeiro ({data_inicio} a {data_fim})"
-    story.append(Paragraph(titulo, styles["Title"]))
-    story.append(Spacer(1, 12))
+    titulo = "Relatório Financeiro"
+    subtitulo = f"Período: {data_inicio} a {data_fim}"
+    _add_header(story, styles, titulo, subtitulo)
 
     rows = [
         ["Faturamento", f"MT {faturamento:,.2f}"],
