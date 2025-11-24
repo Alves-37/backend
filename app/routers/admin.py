@@ -27,15 +27,10 @@ async def reset_dados_online(
     ]
 
     try:
-        # Desabilita verificação de FKs para permitir TRUNCATE em cascata
-        await db.execute(text("SET session_replication_role = 'replica';"))
-
         for table in tables_to_truncate:
             await db.execute(
                 text(f'TRUNCATE TABLE {table} RESTART IDENTITY CASCADE;')
             )
-
-        await db.execute(text("SET session_replication_role = 'origin';"))
         await db.commit()
 
         return {
@@ -43,7 +38,6 @@ async def reset_dados_online(
             "message": "Banco de dados online foi totalmente resetado (tabelas principais esvaziadas).",
         }
     except Exception as e:
-        await db.execute(text("SET session_replication_role = 'origin';"))
         await db.rollback()
         raise HTTPException(
             status_code=500,
