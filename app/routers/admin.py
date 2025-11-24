@@ -22,7 +22,7 @@ async def reset_dados_online(
         "vendas",
         "produtos",
         "clientes",
-        "users",
+        "usuarios",
         "empresa_config",
     ]
 
