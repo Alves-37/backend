@@ -1,16 +1,17 @@
 from io import BytesIO
 from typing import List
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db_session
-from app.db.models import Produto
+from app.db.models import Produto, Venda, ItemVenda, User
 
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -82,4 +83,182 @@ async def relatorio_produtos(baixo_estoque: bool = False, db: AsyncSession = Dep
         BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+def _parse_date_ymd(value: str) -> datetime:
+    try:
+        return datetime.fromisoformat(f"{value}T00:00:00")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Parâmetro de data inválido. Use YYYY-MM-DD")
+
+
+@router.get("/vendas", response_class=StreamingResponse)
+async def relatorio_vendas(
+    data_inicio: str,
+    data_fim: str,
+    usuario_id: str | None = None,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Relatório detalhado de vendas em PDF para o período/usuário informado."""
+    d1 = _parse_date_ymd(data_inicio)
+    d2 = _parse_date_ymd(data_fim)
+    d2_exclusive = d2 + timedelta(days=1)
+
+    stmt = (
+        select(Venda)
+        .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
+        .where(Venda.created_at >= d1, Venda.created_at < d2_exclusive, Venda.cancelada == False)
+    )
+
+    if usuario_id is not None:
+        try:
+            uid = uuid.UUID(usuario_id)
+            stmt = stmt.where(Venda.usuario_id == uid)
+        except Exception:
+            pass
+
+    result = await db.execute(stmt)
+    vendas = result.scalars().all()
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm,
+                            topMargin=15 * mm, bottomMargin=15 * mm)
+    styles = getSampleStyleSheet()
+    story = []
+
+    titulo = f"Relatório de Vendas ({data_inicio} a {data_fim})"
+    story.append(Paragraph(titulo, styles["Title"]))
+    story.append(Spacer(1, 8))
+
+    header = ["Data", "Vendedor", "Cliente", "Forma pag.", "Total (MT)"]
+    data = [header]
+    total_geral = 0.0
+
+    for v in vendas:
+        dt = getattr(v, "created_at", None)
+        data_str = dt.strftime("%Y-%m-%d %H:%M") if isinstance(dt, datetime) else ""
+        vendedor = getattr(getattr(v, "usuario", None), "nome", "") or "-"
+        cliente = getattr(getattr(v, "cliente", None), "nome", "") or "-"
+        forma = v.forma_pagamento or "-"
+        total = float(v.total or 0)
+        total_geral += total
+        data.append([data_str, vendedor, cliente, forma, f"MT {total:,.2f}"])
+
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("FONTSIZE", (0, 1), (-1, -1), 8),
+    ]))
+
+    story.append(table)
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(f"Total geral: MT {total_geral:,.2f}", styles["Heading3"]))
+
+    doc.build(story)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=vendas_periodo.pdf"},
+    )
+
+
+@router.get("/financeiro", response_class=StreamingResponse)
+async def relatorio_financeiro(
+    data_inicio: str,
+    data_fim: str,
+    usuario_id: str | None = None,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Relatório financeiro resumido (faturamento, custo, lucro, ticket etc.) em PDF."""
+    d1 = _parse_date_ymd(data_inicio)
+    d2 = _parse_date_ymd(data_fim)
+    d2_exclusive = d2 + timedelta(days=1)
+
+    # Buscar vendas do período
+    stmt_v = (
+        select(Venda)
+        .options(selectinload(Venda.itens))
+        .where(Venda.created_at >= d1, Venda.created_at < d2_exclusive, Venda.cancelada == False)
+    )
+    if usuario_id is not None:
+        try:
+            uid = uuid.UUID(usuario_id)
+            stmt_v = stmt_v.where(Venda.usuario_id == uid)
+        except Exception:
+            pass
+
+    result_v = await db.execute(stmt_v)
+    vendas = result_v.scalars().all()
+
+    # Mapear custos por produto
+    result_p = await db.execute(select(Produto))
+    produtos = result_p.scalars().all()
+    custo_por_produto = {str(p.id): float(p.preco_custo or 0) for p in produtos}
+
+    faturamento = 0.0
+    custo_total = 0.0
+    itens_total = 0.0
+
+    for v in vendas:
+        for it in getattr(v, "itens", []) or []:
+            pid = str(it.produto_id)
+            preco_unit = float(it.preco_unitario or 0)
+            qtd = float(it.peso_kg or 0) if getattr(it, "peso_kg", 0) else float(it.quantidade or 0)
+            custo_unit = float(custo_por_produto.get(pid, 0))
+            faturamento += preco_unit * qtd
+            custo_total += custo_unit * qtd
+            itens_total += qtd
+
+    lucro = faturamento - custo_total
+    qtd_vendas = len(vendas)
+    ticket_medio = faturamento / qtd_vendas if qtd_vendas > 0 else 0.0
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm,
+                            topMargin=20 * mm, bottomMargin=20 * mm)
+    styles = getSampleStyleSheet()
+    story = []
+
+    titulo = f"Relatório Financeiro ({data_inicio} a {data_fim})"
+    story.append(Paragraph(titulo, styles["Title"]))
+    story.append(Spacer(1, 12))
+
+    rows = [
+        ["Faturamento", f"MT {faturamento:,.2f}"],
+        ["Custo", f"MT {custo_total:,.2f}"],
+        ["Lucro", f"MT {lucro:,.2f}"],
+        ["Qtd. vendas", str(qtd_vendas)],
+        ["Ticket médio", f"MT {ticket_medio:,.2f}"],
+        ["Itens vendidos", f"{itens_total:,.2f}"],
+    ]
+
+    table = Table(rows, colWidths=[80 * mm, 80 * mm])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+    ]))
+
+    story.append(table)
+    doc.build(story)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=relatorio_financeiro.pdf"},
     )
