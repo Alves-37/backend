@@ -11,19 +11,27 @@ class CategoriaOut(BaseModel):
     descricao: str | None = None
 
 
-# Lista padrão alinhada ao cliente PDV3 (SQLite)
+# Lista padrão ajustada para ferragem, loja de acessórios de celular
+# e reprografia/papelaria, sem dependência de banco de dados.
 CATEGORIAS_PADRAO: List[CategoriaOut] = [
-    CategoriaOut(id=1, nome="Alimentos", descricao="Produtos alimentícios em geral"),
-    CategoriaOut(id=2, nome="Bebidas", descricao="Bebidas em geral"),
-    CategoriaOut(id=3, nome="Limpeza", descricao="Produtos de limpeza"),
-    CategoriaOut(id=4, nome="Higiene", descricao="Produtos de higiene pessoal"),
-    CategoriaOut(id=5, nome="Congelados", descricao="Produtos congelados"),
-    CategoriaOut(id=6, nome="Mercearia", descricao="Produtos de mercearia em geral"),
-    CategoriaOut(id=7, nome="Padaria", descricao="Produtos de padaria"),
-    CategoriaOut(id=8, nome="Hortifruti", descricao="Frutas, legumes e verduras"),
-    CategoriaOut(id=9, nome="Açougue", descricao="Carnes em geral"),
-    CategoriaOut(id=10, nome="Laticínios", descricao="Leite e derivados"),
-    CategoriaOut(id=11, nome="Outros", descricao="Outros tipos de produtos"),
+    # Ferragem
+    CategoriaOut(id=1, nome="Ferramentas", descricao="Ferramentas em geral"),
+    CategoriaOut(id=2, nome="Parafusos e Fixadores", descricao="Parafusos, buchas, porcas, arruelas e fixadores"),
+    CategoriaOut(id=3, nome="Elétrica", descricao="Materiais elétricos"),
+    CategoriaOut(id=4, nome="Hidráulica", descricao="Materiais hidráulicos"),
+    CategoriaOut(id=5, nome="Ferragem Geral", descricao="Demais itens de ferragem"),
+
+    # Acessórios para celular
+    CategoriaOut(id=6, nome="Capas e Películas", descricao="Capas, películas e proteções para telemóveis"),
+    CategoriaOut(id=7, nome="Cabos e Carregadores", descricao="Cabos, carregadores e adaptadores"),
+    CategoriaOut(id=8, nome="Fones e Áudio", descricao="Fones de ouvido e dispositivos de áudio"),
+    CategoriaOut(id=9, nome="Acessórios Diversos", descricao="Suportes, anéis e outros acessórios para telemóveis"),
+
+    # Papelaria e reprografia
+    CategoriaOut(id=10, nome="Papelaria", descricao="Cadernos, canetas, pastas e itens de papelaria"),
+    CategoriaOut(id=11, nome="Impressão e Cópias", descricao="Serviços de impressão, cópias e digitalização"),
+    CategoriaOut(id=12, nome="Encadernação e Acabamento", descricao="Encadernação, plastificação e outros acabamentos"),
+    CategoriaOut(id=13, nome="Insumos Internos", descricao="Papel, toner e insumos não vendidos diretamente"),
 ]
 
 
