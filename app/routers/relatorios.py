@@ -1,4 +1,4 @@
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import List
 from datetime import datetime, timedelta
 import uuid
@@ -296,8 +296,9 @@ async def exportar_faturas_mensal(
     result = await db.execute(stmt)
     vendas = result.scalars().all()
 
-    buffer = BytesIO()
-    writer = csv.writer(buffer, delimiter=';', lineterminator='\n')
+    # Usar StringIO para escrever texto e depois codificar para bytes
+    text_buffer = StringIO()
+    writer = csv.writer(text_buffer, delimiter=';', lineterminator='\n')
 
     # Cabeçalho CSV
     writer.writerow([
@@ -335,7 +336,9 @@ async def exportar_faturas_mensal(
             obs.replace('\n', ' ').replace('\r', ' '),
         ])
 
-    buffer.seek(0)
+    csv_text = text_buffer.getvalue()
+    csv_bytes = csv_text.encode('utf-8')
+    buffer = BytesIO(csv_bytes)
     filename = f"faturas_{ano}_{mes:02d}.csv"
 
     return StreamingResponse(
@@ -346,3 +349,56 @@ async def exportar_faturas_mensal(
             "Cache-Control": "no-cache",
         },
     )
+
+
+@router.get("/iva")
+async def resumo_iva(
+    data_inicio: str,
+    data_fim: str,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Resumo de IVA por taxa em um período (base, imposto e faturamento)."""
+    d1 = _parse_date_ymd(data_inicio)
+    d2 = _parse_date_ymd(data_fim)
+    d2_exclusive = d2 + timedelta(days=1)
+
+    # Buscar itens de vendas não canceladas no período
+    stmt = (
+        select(ItemVenda)
+        .join(Venda, ItemVenda.venda_id == Venda.id)
+        .where(
+            Venda.created_at >= d1,
+            Venda.created_at < d2_exclusive,
+            Venda.cancelada == False,
+        )
+    )
+
+    result = await db.execute(stmt)
+    itens = result.scalars().all()
+
+    resumo: dict[float, dict] = {}
+    for it in itens:
+        taxa = float(getattr(it, "taxa_iva", 0.0) or 0.0)
+        base = float(getattr(it, "base_iva", 0.0) or 0.0)
+        iva = float(getattr(it, "valor_iva", 0.0) or 0.0)
+        if taxa not in resumo:
+            resumo[taxa] = {"taxa_iva": taxa, "base_total": 0.0, "iva_total": 0.0}
+        resumo[taxa]["base_total"] += base
+        resumo[taxa]["iva_total"] += iva
+
+    # Converter para lista ordenada por taxa
+    resultado = []
+    for taxa in sorted(resumo.keys()):
+        base_total = resumo[taxa]["base_total"]
+        iva_total = resumo[taxa]["iva_total"]
+        faturamento_total = base_total + iva_total
+        resultado.append(
+            {
+                "taxa_iva": taxa,
+                "base_total": base_total,
+                "iva_total": iva_total,
+                "faturamento_total": faturamento_total,
+            }
+        )
+
+    return {"data_inicio": data_inicio, "data_fim": data_fim, "itens": resultado}

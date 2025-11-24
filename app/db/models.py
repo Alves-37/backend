@@ -37,6 +37,9 @@ class Produto(DeclarativeBase):
     venda_por_peso: Mapped[bool] = mapped_column(Boolean, default=False)
     unidade_medida: Mapped[str] = mapped_column(String(10), default='un')
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # IVA: taxa padrão aplicada ao produto (ex.: 0, 16, etc.) e código de imposto opcional
+    taxa_iva: Mapped[float] = mapped_column(Float, default=0.0)
+    codigo_imposto: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
 
 class Cliente(DeclarativeBase):
@@ -75,6 +78,10 @@ class ItemVenda(DeclarativeBase):
     peso_kg: Mapped[float] = mapped_column(Float, default=0.0)
     preco_unitario: Mapped[float] = mapped_column(Float, nullable=False)
     subtotal: Mapped[float] = mapped_column(Float, nullable=False)
+    # Campos de IVA calculados no momento da venda
+    taxa_iva: Mapped[float] = mapped_column(Float, default=0.0)
+    base_iva: Mapped[float] = mapped_column(Float, default=0.0)
+    valor_iva: Mapped[float] = mapped_column(Float, default=0.0)
     
     # Relacionamentos
     venda: Mapped["Venda"] = relationship("Venda", back_populates="itens")

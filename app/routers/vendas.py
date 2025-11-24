@@ -125,13 +125,31 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
                 if not produto_db:
                     raise HTTPException(status_code=400, detail=f"Produto inexistente no servidor: {item_data.produto_id}")
 
+                # Calcular IVA com base na taxa do produto
+                quantidade = max(1, int(item_data.quantidade or 0))
+                peso_kg = getattr(item_data, 'peso_kg', 0.0)
+                preco_unitario = float(item_data.preco_unitario)
+                subtotal = float(item_data.subtotal)
+
+                taxa_iva = float(getattr(produto_db, 'taxa_iva', 0.0) or 0.0)
+                if taxa_iva > 0:
+                    fator = 1 + (taxa_iva / 100.0)
+                    base_iva = subtotal / fator
+                    valor_iva = subtotal - base_iva
+                else:
+                    base_iva = subtotal
+                    valor_iva = 0.0
+
                 item = ItemVenda(
                     venda_id=nova_venda.id,
                     produto_id=produto_uuid,
-                    quantidade=max(1, int(item_data.quantidade or 0)),
-                    peso_kg=getattr(item_data, 'peso_kg', 0.0),
-                    preco_unitario=item_data.preco_unitario,
-                    subtotal=item_data.subtotal
+                    quantidade=quantidade,
+                    peso_kg=peso_kg,
+                    preco_unitario=preco_unitario,
+                    subtotal=subtotal,
+                    taxa_iva=taxa_iva,
+                    base_iva=base_iva,
+                    valor_iva=valor_iva,
                 )
                 db.add(item)
         
