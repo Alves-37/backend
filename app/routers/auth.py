@@ -30,9 +30,13 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Optional: block inactive users
-    # if not user.ativo:
-    #     raise HTTPException(status_code=403, detail="User is inactive")
+    # Bloquear usuários inativos
+    if not user.ativo:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+
+    # Permitir login online apenas para administradores
+    if not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not allowed to access online system")
 
     access_token = create_access_token(data={"sub": user.usuario, "user_id": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}

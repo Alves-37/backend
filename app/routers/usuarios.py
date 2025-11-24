@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, func
 from typing import List
 import uuid
 from datetime import datetime
@@ -174,6 +174,10 @@ async def atualizar_usuario(usuario_id: str, usuario: UsuarioUpdate, db: AsyncSe
         if not usuario_existente:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
         
+        # Proteger usuário admin padrão contra desativação via API
+        if (usuario_existente.usuario == "admin" or usuario_existente.is_admin) and hasattr(usuario, 'ativo') and usuario.ativo is False:
+            raise HTTPException(status_code=400, detail="Não é permitido desativar o usuário administrador padrão")
+        
         # Atualizar campos
         update_data = {}
         if usuario.nome is not None:
@@ -244,6 +248,19 @@ async def deletar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_ses
         
         if not usuario_existente:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        # Impedir exclusão do administrador padrão
+        if usuario_existente.usuario == "admin":
+            raise HTTPException(status_code=400, detail="Não é permitido excluir o usuário administrador padrão")
+        
+        # Opcional: se for o único admin ativo, também impedir exclusão
+        if usuario_existente.is_admin:
+            result_admins = await db.execute(
+                select(func.count()).select_from(User).where(User.is_admin == True, User.ativo == True)
+            )
+            total_admins_ativos = result_admins.scalar_one() or 0
+            if total_admins_ativos <= 1:
+                raise HTTPException(status_code=400, detail="Não é permitido excluir o único administrador ativo")
         
         # Soft delete
         await db.execute(
