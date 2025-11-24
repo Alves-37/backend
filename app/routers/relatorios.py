@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db_session
-from app.db.models import Produto, Venda, ItemVenda, User, Cliente
+from app.db.models import Produto, Venda, ItemVenda, User, Cliente, EmpresaConfig
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -26,27 +26,51 @@ router = APIRouter(prefix="/api/relatorios", tags=["relatorios"])
 LOGO_PATH = Path(__file__).resolve().parents[2] / "img" / "nelson.jpg"
 
 
-def _add_header(story, styles, titulo: str, subtitulo: str | None = None):
-    """Adiciona cabeçalho padrão com logo + título opcionalmente subtítulo."""
-    header_elems = []
+def _add_header(story, styles, titulo: str, subtitulo: str | None = None, empresa: EmpresaConfig | None = None):
+    """Adiciona cabeçalho padrão com logo + dados da empresa + título/subtítulo."""
+    # Logo (se existir)
     if LOGO_PATH.exists():
         try:
             logo = Image(str(LOGO_PATH), width=25 * mm, height=25 * mm)
-            header_elems.append(logo)
+            story.append(logo)
+            story.append(Spacer(1, 4))
         except Exception:
             pass
-    header_elems.append(Paragraph(titulo, styles["Title"]))
-    if subtitulo:
-        header_elems.append(Paragraph(subtitulo, styles["Normal"]))
 
-    # Se tiver logo e texto, alinhar em coluna
-    for elem in header_elems:
-        story.append(elem)
-        story.append(Spacer(1, 4))
+    # Dados da empresa
+    if empresa is not None:
+        nome = (empresa.nome or "").strip()
+        linha1 = nome or ""
+
+        detalhes = []
+        if empresa.nuit:
+            detalhes.append(f"NUIT: {empresa.nuit}")
+        if empresa.telefone:
+            detalhes.append(f"Tel: {empresa.telefone}")
+        if empresa.email:
+            detalhes.append(f"Email: {empresa.email}")
+
+        linha2 = " | ".join(detalhes) if detalhes else ""
+        linha3 = (empresa.endereco or "").strip()
+
+        if linha1:
+            story.append(Paragraph(linha1, styles["Heading3"]))
+        if linha2:
+            story.append(Paragraph(linha2, styles["Normal"]))
+        if linha3:
+            story.append(Paragraph(linha3, styles["Normal"]))
+        if linha1 or linha2 or linha3:
+            story.append(Spacer(1, 6))
+
+    # Título e subtítulo do relatório
+    story.append(Paragraph(titulo, styles["Title"]))
+    if subtitulo:
+        story.append(Paragraph(subtitulo, styles["Normal"]))
+
     story.append(Spacer(1, 8))
 
 
-def _build_produtos_pdf(produtos: List[Produto], titulo: str) -> bytes:
+def _build_produtos_pdf(produtos: List[Produto], titulo: str, empresa: EmpresaConfig | None = None) -> bytes:
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm,
                             topMargin=20 * mm, bottomMargin=20 * mm)
@@ -54,7 +78,7 @@ def _build_produtos_pdf(produtos: List[Produto], titulo: str) -> bytes:
     styles = getSampleStyleSheet()
     story = []
 
-    _add_header(story, styles, titulo)
+    _add_header(story, styles, titulo, empresa=empresa)
 
     data = [["Código", "Nome", "Preço venda", "Estoque", "Estoque mín."]]
     for p in produtos:
@@ -99,8 +123,12 @@ async def relatorio_produtos(baixo_estoque: bool = False, db: AsyncSession = Dep
 
         produtos = [p for p in produtos if is_baixo(p)]
 
+    # Buscar dados da empresa
+    cfg_result = await db.execute(select(EmpresaConfig))
+    empresa = cfg_result.scalars().first()
+
     titulo = "Produtos" if not baixo_estoque else "Produtos com baixo estoque"
-    pdf_bytes = _build_produtos_pdf(produtos, titulo)
+    pdf_bytes = _build_produtos_pdf(produtos, titulo, empresa=empresa)
 
     filename = "produtos.pdf" if not baixo_estoque else "produtos_baixo_estoque.pdf"
 
@@ -152,9 +180,13 @@ async def relatorio_vendas(
     styles = getSampleStyleSheet()
     story = []
 
+    # Dados da empresa
+    cfg_result = await db.execute(select(EmpresaConfig))
+    empresa = cfg_result.scalars().first()
+
     titulo = "Relatório de Vendas"
     subtitulo = f"Período: {data_inicio} a {data_fim}"
-    _add_header(story, styles, titulo, subtitulo)
+    _add_header(story, styles, titulo, subtitulo, empresa=empresa)
 
     header = ["Data", "Vendedor", "Cliente", "Forma pag.", "Total (MT)"]
     data = [header]
@@ -254,9 +286,13 @@ async def relatorio_financeiro(
     styles = getSampleStyleSheet()
     story = []
 
+    # Dados da empresa
+    cfg_result = await db.execute(select(EmpresaConfig))
+    empresa = cfg_result.scalars().first()
+
     titulo = "Relatório Financeiro"
     subtitulo = f"Período: {data_inicio} a {data_fim}"
-    _add_header(story, styles, titulo, subtitulo)
+    _add_header(story, styles, titulo, subtitulo, empresa=empresa)
 
     rows = [
         ["Faturamento", f"MT {faturamento:,.2f}"],
