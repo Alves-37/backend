@@ -27,6 +27,7 @@ class ProdutoCreate(BaseModel):
     categoria_id: Optional[int] = None
     venda_por_peso: bool = False
     unidade_medida: str = "un"
+    taxa_iva: float = 0.0
     uuid: Optional[str] = None
 
 class ProdutoUpdate(BaseModel):
@@ -40,6 +41,7 @@ class ProdutoUpdate(BaseModel):
     categoria_id: Optional[int] = None
     venda_por_peso: Optional[bool] = None
     unidade_medida: Optional[str] = None
+    taxa_iva: Optional[float] = None
 
 class ProdutoResponse(BaseModel):
     id: str
@@ -53,6 +55,7 @@ class ProdutoResponse(BaseModel):
     categoria_id: int = None
     venda_por_peso: bool
     unidade_medida: str
+    taxa_iva: float
     ativo: bool
     created_at: datetime
     updated_at: datetime
@@ -74,6 +77,7 @@ class ProdutoResponse(BaseModel):
             categoria_id=obj.categoria_id,
             venda_por_peso=obj.venda_por_peso,
             unidade_medida=obj.unidade_medida,
+            taxa_iva=getattr(obj, "taxa_iva", 0.0),
             ativo=obj.ativo,
             created_at=obj.created_at,
             updated_at=obj.updated_at
@@ -157,6 +161,7 @@ async def create_produto(produto_data: ProdutoCreate, db: AsyncSession = Depends
             categoria_id=produto_data.categoria_id,
             venda_por_peso=produto_data.venda_por_peso,
             unidade_medida=produto_data.unidade_medida,
+            taxa_iva=getattr(produto_data, "taxa_iva", 0.0),
             ativo=True
         )
         
@@ -352,6 +357,7 @@ async def sync_push_produtos(
                         'categoria_id': produto_data.get('categoria_id'),
                         'venda_por_peso': produto_data.get('venda_por_peso', False),
                         'unidade_medida': produto_data.get('unidade_medida', 'un'),
+                        'taxa_iva': produto_data.get('taxa_iva', 0.0),
                         'updated_at': datetime.utcnow()
                     }
                     
@@ -374,6 +380,7 @@ async def sync_push_produtos(
                         categoria_id=produto_data.get('categoria_id'),
                         venda_por_peso=produto_data.get('venda_por_peso', False),
                         unidade_medida=produto_data.get('unidade_medida', 'un'),
+                        taxa_iva=produto_data.get('taxa_iva', 0.0),
                         ativo=True
                     )
                     db.add(produto)
@@ -435,6 +442,7 @@ async def sync_pull_produtos(
                     'categoria_id': produto.categoria_id,
                     'venda_por_peso': produto.venda_por_peso,
                     'unidade_medida': produto.unidade_medida,
+                    'taxa_iva': getattr(produto, 'taxa_iva', 0.0),
                     'ativo': produto.ativo,
                     'created_at': produto.created_at.isoformat(),
                     'updated_at': produto.updated_at.isoformat()
