@@ -49,6 +49,7 @@ class DividaOut(BaseModel):
     id_local: Optional[int]
     cliente_id: Optional[str]
     usuario_id: Optional[str]
+    cliente_nome: Optional[str] = None
     data_divida: str
     valor_total: float
     valor_original: float
@@ -128,6 +129,13 @@ async def criar_divida(payload: DividaCreate, db: AsyncSession = Depends(get_db_
 
         await db.commit()
         await db.refresh(nova_divida)
+
+        # Injetar nome do cliente, se carregado
+        try:
+            setattr(nova_divida, 'cliente_nome', getattr(getattr(nova_divida, 'cliente', None), 'nome', None))
+        except Exception:
+            setattr(nova_divida, 'cliente_nome', None)
+
         return DividaOut.model_validate(nova_divida)
     except HTTPException:
         await db.rollback()
@@ -251,14 +259,28 @@ async def listar_dividas_abertas(
 ):
     """Lista dívidas com status diferente de 'Quitado', opcionalmente filtrando por cliente."""
     try:
-        stmt = select(Divida).where(Divida.status != "Quitado")
+        # Join com Cliente para obter nome
+        stmt = (
+            select(Divida, Cliente.nome.label("cliente_nome"))
+            .join(Cliente, Divida.cliente_id == Cliente.id, isouter=True)
+            .where(Divida.status != "Quitado")
+        )
+
         cliente_uuid = _parse_uuid(cliente_id)
         if cliente_uuid:
             stmt = stmt.where(Divida.cliente_id == cliente_uuid)
 
         result = await db.execute(stmt.order_by(Divida.data_divida.desc()))
-        dividas = result.scalars().all()
-        return [DividaOut.model_validate(d) for d in dividas]
+        rows = result.all()
+
+        resposta: list[DividaOut] = []
+        for divida, cli_nome in rows:
+            try:
+                setattr(divida, 'cliente_nome', cli_nome)
+            except Exception:
+                setattr(divida, 'cliente_nome', None)
+            resposta.append(DividaOut.model_validate(divida))
+        return resposta
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao listar dívidas: {str(e)}")
 
@@ -299,6 +321,13 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
 
         await db.commit()
         await db.refresh(divida)
+
+        # Injetar nome do cliente, se disponível
+        try:
+            setattr(divida, 'cliente_nome', getattr(getattr(divida, 'cliente', None), 'nome', None))
+        except Exception:
+            setattr(divida, 'cliente_nome', None)
+
         return DividaOut.model_validate(divida)
     except HTTPException:
         await db.rollback()
