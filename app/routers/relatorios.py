@@ -23,7 +23,7 @@ from reportlab.lib import colors
 router = APIRouter(prefix="/api/relatorios", tags=["relatorios"])
 
 
-LOGO_PATH = Path(__file__).resolve().parents[2] / "img" / "nelson.jpg"
+LOGO_PATH = Path(__file__).resolve().parents[2] / "img" / "vuchada.png"
 
 
 def _add_header(story, styles, titulo: str, subtitulo: str | None = None, empresa: EmpresaConfig | None = None):
