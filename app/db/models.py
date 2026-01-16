@@ -7,10 +7,21 @@ from datetime import datetime
 from typing import Optional
 import uuid
 
+PDV_SCHEMA = "pdv"
+
+class Tenant(DeclarativeBase):
+    __tablename__ = "tenants"
+
+    nome: Mapped[str] = mapped_column(String(200), nullable=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    tipo_negocio: Mapped[Optional[str]] = mapped_column(String(50), default="mercearia")
+
 
 class User(DeclarativeBase):
     __tablename__ = "usuarios"
+    __table_args__ = {"schema": PDV_SCHEMA}
 
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
     nome: Mapped[str] = mapped_column(String(100), nullable=False)
     usuario: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     senha_hash: Mapped[str] = mapped_column(String, nullable=False)
@@ -26,7 +37,9 @@ class User(DeclarativeBase):
 
 class Produto(DeclarativeBase):
     __tablename__ = "produtos"
+    __table_args__ = {"schema": PDV_SCHEMA}
 
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
     codigo: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     nome: Mapped[str] = mapped_column(String(200), nullable=False)
     descricao: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -41,11 +54,14 @@ class Produto(DeclarativeBase):
     # IVA: taxa padrão aplicada ao produto (ex.: 0, 16, etc.) e código de imposto opcional
     taxa_iva: Mapped[float] = mapped_column(Float, default=0.0)
     codigo_imposto: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    imagem_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
 class Cliente(DeclarativeBase):
     __tablename__ = "clientes"
+    __table_args__ = {"schema": PDV_SCHEMA}
 
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
     nome: Mapped[str] = mapped_column(String(100), nullable=False)
     documento: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     telefone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
@@ -55,9 +71,11 @@ class Cliente(DeclarativeBase):
 
 class Venda(DeclarativeBase):
     __tablename__ = "vendas"
+    __table_args__ = {"schema": PDV_SCHEMA}
 
-    usuario_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
-    cliente_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
+    usuario_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.usuarios.id"), nullable=True)
+    cliente_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.clientes.id"), nullable=True)
     total: Mapped[float] = mapped_column(Float, nullable=False)
     desconto: Mapped[float] = mapped_column(Float, default=0.0)
     forma_pagamento: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -72,9 +90,10 @@ class Venda(DeclarativeBase):
 
 class ItemVenda(DeclarativeBase):
     __tablename__ = "itens_venda"
+    __table_args__ = {"schema": PDV_SCHEMA}
 
-    venda_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("vendas.id"), nullable=False)
-    produto_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("produtos.id"), nullable=False)
+    venda_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.vendas.id"), nullable=False)
+    produto_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.produtos.id"), nullable=False)
     quantidade: Mapped[int] = mapped_column(Integer, nullable=False)
     peso_kg: Mapped[float] = mapped_column(Float, default=0.0)
     preco_unitario: Mapped[float] = mapped_column(Float, nullable=False)
@@ -91,7 +110,9 @@ class ItemVenda(DeclarativeBase):
 
 class EmpresaConfig(DeclarativeBase):
     __tablename__ = "empresa_config"
+    __table_args__ = {"schema": PDV_SCHEMA}
 
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
     nome: Mapped[str] = mapped_column(String(200), default="")
     nuit: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     telefone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -108,11 +129,13 @@ class Divida(DeclarativeBase):
     """
 
     __tablename__ = "dividas"
+    __table_args__ = {"schema": PDV_SCHEMA}
 
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
     # ID local opcional (inteiro) para mapear com o SQLite do PDV3
     id_local: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
-    cliente_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("clientes.id"), nullable=True)
-    usuario_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+    cliente_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.clientes.id"), nullable=True)
+    usuario_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.usuarios.id"), nullable=True)
     data_divida: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     valor_total: Mapped[float] = mapped_column(Float, nullable=False)
     valor_original: Mapped[float] = mapped_column(Float, default=0.0)
@@ -130,9 +153,10 @@ class Divida(DeclarativeBase):
 
 class ItemDivida(DeclarativeBase):
     __tablename__ = "itens_divida"
+    __table_args__ = {"schema": PDV_SCHEMA}
 
-    divida_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("dividas.id"), nullable=False)
-    produto_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("produtos.id"), nullable=False)
+    divida_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.dividas.id"), nullable=False)
+    produto_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.produtos.id"), nullable=False)
     quantidade: Mapped[float] = mapped_column(Float, nullable=False)
     preco_unitario: Mapped[float] = mapped_column(Float, nullable=False)
     subtotal: Mapped[float] = mapped_column(Float, nullable=False)
@@ -144,12 +168,13 @@ class ItemDivida(DeclarativeBase):
 
 class PagamentoDivida(DeclarativeBase):
     __tablename__ = "pagamentos_divida"
+    __table_args__ = {"schema": PDV_SCHEMA}
 
-    divida_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("dividas.id"), nullable=False)
+    divida_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.dividas.id"), nullable=False)
     data_pagamento: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     valor: Mapped[float] = mapped_column(Float, nullable=False)
     forma_pagamento: Mapped[str] = mapped_column(String(50), nullable=False)
-    usuario_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+    usuario_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.usuarios.id"), nullable=True)
 
     divida: Mapped["Divida"] = relationship("Divida", back_populates="pagamentos")
     usuario: Mapped[Optional["User"]] = relationship("User")

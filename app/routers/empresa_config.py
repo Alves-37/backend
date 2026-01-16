@@ -6,17 +6,20 @@ from sqlalchemy import select
 
 from app.db.database import get_db_session
 from app.db.models import EmpresaConfig
-from app.core.deps import get_current_admin_user
+from app.core.deps import get_current_admin_user, get_tenant_id
+import uuid
 
 router = APIRouter(prefix="/api/config", tags=["configuracao"])
 
 
-async def _get_singleton_config(db: AsyncSession) -> EmpresaConfig:
-  """Retorna o registro único de configuração de empresa, criando se não existir."""
-  result = await db.execute(select(EmpresaConfig))
+async def _get_singleton_config(db: AsyncSession, tenant_id: uuid.UUID) -> EmpresaConfig:
+  """Retorna o registro único de configuração de empresa por tenant, criando se não existir."""
+  result = await db.execute(
+    select(EmpresaConfig).where(EmpresaConfig.tenant_id == tenant_id)
+  )
   cfg = result.scalar_one_or_none()
   if cfg is None:
-    cfg = EmpresaConfig()
+    cfg = EmpresaConfig(tenant_id=tenant_id)
     db.add(cfg)
     await db.commit()
     await db.refresh(cfg)
@@ -24,8 +27,11 @@ async def _get_singleton_config(db: AsyncSession) -> EmpresaConfig:
 
 
 @router.get("/empresa")
-async def get_empresa_config(db: AsyncSession = Depends(get_db_session)):
-  cfg = await _get_singleton_config(db)
+async def get_empresa_config(
+  db: AsyncSession = Depends(get_db_session),
+  tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
+  cfg = await _get_singleton_config(db, tenant_id)
   return {
     "id": str(cfg.id),
     "nome": cfg.nome,
@@ -41,9 +47,10 @@ async def get_empresa_config(db: AsyncSession = Depends(get_db_session)):
 async def update_empresa_config(
   payload: dict,
   db: AsyncSession = Depends(get_db_session),
+  tenant_id: uuid.UUID = Depends(get_tenant_id),
   user=Depends(get_current_admin_user),
 ):
-  cfg = await _get_singleton_config(db)
+  cfg = await _get_singleton_config(db, tenant_id)
 
   cfg.nome = payload.get("nome", cfg.nome)
   cfg.nuit = payload.get("nuit", cfg.nuit)

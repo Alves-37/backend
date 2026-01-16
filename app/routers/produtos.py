@@ -1,16 +1,17 @@
-"""
-Endpoints para gerenciamento de produtos com sincronização.
-"""
-from fastapi import APIRouter, Depends, HTTPException, status
+"""Endpoints para gerenciamento de produtos com sincronização."""
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, or_
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 import uuid
 from datetime import datetime
+import os
 
 from app.db.database import get_db_session
 from app.db.models import Produto
 from app.core.realtime import manager as realtime_manager
+from app.core.deps import get_tenant_id
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/produtos", tags=["Produtos"])
@@ -28,6 +29,7 @@ class ProdutoCreate(BaseModel):
     venda_por_peso: bool = False
     unidade_medida: str = "un"
     taxa_iva: float = 0.0
+    ativo: bool = True
     uuid: Optional[str] = None
 
 class ProdutoUpdate(BaseModel):
@@ -42,21 +44,23 @@ class ProdutoUpdate(BaseModel):
     venda_por_peso: Optional[bool] = None
     unidade_medida: Optional[str] = None
     taxa_iva: Optional[float] = None
+    ativo: Optional[bool] = None
 
 class ProdutoResponse(BaseModel):
     id: str
     codigo: str
     nome: str
-    descricao: str = None
+    descricao: Optional[str] = None
     preco_custo: float
     preco_venda: float
     estoque: float
     estoque_minimo: float
-    categoria_id: int = None
+    categoria_id: Optional[int] = None
     venda_por_peso: bool
     unidade_medida: str
     taxa_iva: float
     ativo: bool
+    imagem_path: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -79,17 +83,28 @@ class ProdutoResponse(BaseModel):
             unidade_medida=obj.unidade_medida,
             taxa_iva=getattr(obj, "taxa_iva", 0.0),
             ativo=obj.ativo,
+            imagem_path=getattr(obj, "imagem_path", None),
             created_at=obj.created_at,
             updated_at=obj.updated_at
         )
 
 @router.get("/", response_model=List[ProdutoResponse])
-async def get_produtos(db: AsyncSession = Depends(get_db_session)):
+async def get_produtos(
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+    q: Optional[str] = None,
+    incluir_inativos: bool = False,
+):
     """Lista todos os produtos ativos."""
     try:
-        result = await db.execute(
-            select(Produto).where(Produto.ativo == True).order_by(Produto.nome)
-        )
+        query = select(Produto).where(Produto.tenant_id == tenant_id)
+        if not incluir_inativos:
+            query = query.where(Produto.ativo == True)
+        if q:
+            term = f"%{q.strip()}%"
+            query = query.where(or_(Produto.nome.ilike(term), Produto.codigo.ilike(term)))
+
+        result = await db.execute(query.order_by(Produto.nome))
         produtos = result.scalars().all()
         return [ProdutoResponse.from_orm(p) for p in produtos]
     except Exception as e:
@@ -99,7 +114,11 @@ async def get_produtos(db: AsyncSession = Depends(get_db_session)):
         )
 
 @router.get("/{produto_uuid}", response_model=ProdutoResponse)
-async def get_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_session)):
+async def get_produto(
+    produto_uuid: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Busca produto por UUID."""
     try:
         # Tentar converter para UUID
@@ -108,7 +127,8 @@ async def get_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_sessi
         result = await db.execute(
             select(Produto).where(
                 Produto.id == produto_id,
-                Produto.ativo == True
+                Produto.ativo == True,
+                Produto.tenant_id == tenant_id,
             )
         )
         produto = result.scalar_one_or_none()
@@ -132,7 +152,11 @@ async def get_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_sessi
         )
 
 @router.post("/", response_model=ProdutoResponse, status_code=status.HTTP_201_CREATED)
-async def create_produto(produto_data: ProdutoCreate, db: AsyncSession = Depends(get_db_session)):
+async def create_produto(
+    produto_data: ProdutoCreate,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Cria novo produto."""
     try:
         # Gerar UUID se não fornecido
@@ -140,7 +164,10 @@ async def create_produto(produto_data: ProdutoCreate, db: AsyncSession = Depends
         
         # Verificar se UUID já existe
         existing = await db.execute(
-            select(Produto).where(Produto.id == produto_uuid)
+            select(Produto).where(
+                Produto.id == produto_uuid,
+                Produto.tenant_id == tenant_id,
+            )
         )
         if existing.scalar_one_or_none():
             raise HTTPException(
@@ -151,6 +178,7 @@ async def create_produto(produto_data: ProdutoCreate, db: AsyncSession = Depends
         # Criar produto
         produto = Produto(
             id=produto_uuid,
+            tenant_id=tenant_id,
             codigo=produto_data.codigo,
             nome=produto_data.nome,
             descricao=produto_data.descricao,
@@ -162,7 +190,7 @@ async def create_produto(produto_data: ProdutoCreate, db: AsyncSession = Depends
             venda_por_peso=produto_data.venda_por_peso,
             unidade_medida=produto_data.unidade_medida,
             taxa_iva=getattr(produto_data, "taxa_iva", 0.0),
-            ativo=True
+            ativo=bool(getattr(produto_data, "ativo", True))
         )
         
         db.add(produto)
@@ -199,7 +227,8 @@ async def create_produto(produto_data: ProdutoCreate, db: AsyncSession = Depends
 async def update_produto(
     produto_uuid: str, 
     produto_data: ProdutoUpdate, 
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
     """Atualiza produto existente."""
     try:
@@ -210,7 +239,8 @@ async def update_produto(
         result = await db.execute(
             select(Produto).where(
                 Produto.id == produto_id,
-                Produto.ativo == True
+                Produto.ativo == True,
+                Produto.tenant_id == tenant_id,
             )
         )
         produto = result.scalar_one_or_none()
@@ -228,7 +258,10 @@ async def update_produto(
             
             await db.execute(
                 update(Produto)
-                .where(Produto.id == produto_id)
+                .where(
+                    Produto.id == produto_id,
+                    Produto.tenant_id == tenant_id,
+                )
                 .values(**update_data)
             )
             await db.commit()
@@ -265,16 +298,82 @@ async def update_produto(
             detail=f"Erro ao atualizar produto: {str(e)}"
         )
 
+
+@router.post("/{produto_uuid}/imagem", response_model=ProdutoResponse)
+async def upload_imagem_produto(
+    produto_uuid: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
+    try:
+        produto_id = uuid.UUID(produto_uuid)
+        result = await db.execute(
+            select(Produto).where(
+                Produto.id == produto_id,
+                Produto.tenant_id == tenant_id,
+                Produto.ativo == True,
+            )
+        )
+        produto = result.scalar_one_or_none()
+        if not produto:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Produto não encontrado")
+
+        filename = (file.filename or "").strip()
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Formato inválido (use jpg, png ou webp)")
+
+        media_dir = os.getenv("MEDIA_DIR", "media")
+        rel_dir = os.path.join("produtos", str(tenant_id))
+        abs_dir = os.path.join(media_dir, rel_dir)
+        os.makedirs(abs_dir, exist_ok=True)
+
+        out_name = f"{produto_id}{ext}"
+        abs_path = os.path.join(abs_dir, out_name)
+
+        content = await file.read()
+        with open(abs_path, "wb") as f:
+            f.write(content)
+
+        imagem_path = f"/media/produtos/{tenant_id}/{out_name}"
+        await db.execute(
+            update(Produto)
+            .where(Produto.id == produto_id, Produto.tenant_id == tenant_id)
+            .values(imagem_path=imagem_path, updated_at=datetime.utcnow())
+        )
+        await db.commit()
+
+        result2 = await db.execute(
+            select(Produto).where(Produto.id == produto_id, Produto.tenant_id == tenant_id)
+        )
+        produto2 = result2.scalar_one()
+        return ProdutoResponse.from_orm(produto2)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="UUID inválido")
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao enviar imagem: {str(e)}")
+
 @router.delete("/{produto_uuid}")
-async def delete_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_session)):
-    """Soft delete de produto: marca como inativo para evitar quebra de FKs."""
+async def delete_produto(
+    produto_uuid: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
+    """Exclusão do produto."""
     try:
         # Converter UUID
         produto_id = uuid.UUID(produto_uuid)
 
         # Verificar se produto existe (independente de ativo)
         result = await db.execute(
-            select(Produto).where(Produto.id == produto_id)
+            select(Produto).where(
+                Produto.id == produto_id,
+                Produto.tenant_id == tenant_id,
+            )
         )
         produto = result.scalar_one_or_none()
 
@@ -284,31 +383,35 @@ async def delete_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_se
                 detail="Produto não encontrado"
             )
 
-        # Se já está inativo, apenas confirme operação idempotente
-        if produto.ativo is False:
-            return {"message": "Produto já estava inativo"}
+        try:
+            await db.execute(
+                delete(Produto)
+                .where(
+                    Produto.id == produto_id,
+                    Produto.tenant_id == tenant_id,
+                )
+            )
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Não foi possível excluir: produto já foi usado em vendas. Desative o produto em vez de excluir.",
+            )
 
-        # Soft delete: marcar ativo = False e atualizar updated_at
-        await db.execute(
-            update(Produto)
-            .where(Produto.id == produto_id)
-            .values(ativo=False, updated_at=datetime.utcnow())
-        )
-        await db.commit()
-
-        # Broadcast realtime: produto deletado (soft)
+        # Broadcast realtime: produto deletado
         try:
             await realtime_manager.broadcast("produto.deleted", {
                 "ts": datetime.utcnow().isoformat(),
                 "data": {
                     "id": str(produto_id),
-                    "soft": True,
+                    "soft": False,
                 }
             })
         except Exception:
             pass
 
-        return {"message": "Produto marcado como inativo (soft delete)"}
+        return {"message": "Produto excluído"}
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -327,7 +430,8 @@ async def delete_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_se
 @router.post("/sync/push")
 async def sync_push_produtos(
     produtos: List[dict], 
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
     """Recebe produtos do cliente para sincronização."""
     try:
@@ -340,7 +444,10 @@ async def sync_push_produtos(
                 
                 # Verificar se produto já existe
                 result = await db.execute(
-                    select(Produto).where(Produto.id == produto_uuid)
+                    select(Produto).where(
+                        Produto.id == produto_uuid,
+                        Produto.tenant_id == tenant_id,
+                    )
                 )
                 existing = result.scalar_one_or_none()
                 
@@ -363,13 +470,17 @@ async def sync_push_produtos(
                     
                     await db.execute(
                         update(Produto)
-                        .where(Produto.id == produto_uuid)
+                        .where(
+                            Produto.id == produto_uuid,
+                            Produto.tenant_id == tenant_id,
+                        )
                         .values(**update_data)
                     )
                 else:
                     # Criar novo produto
                     produto = Produto(
                         id=produto_uuid,
+                        tenant_id=tenant_id,
                         codigo=produto_data.get('codigo', ''),
                         nome=produto_data['nome'],
                         descricao=produto_data.get('descricao', ''),
@@ -411,11 +522,15 @@ async def sync_push_produtos(
 @router.get("/sync/pull")
 async def sync_pull_produtos(
     last_sync: Optional[str] = None,
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
     """Envia produtos atualizados para o cliente."""
     try:
-        query = select(Produto).where(Produto.ativo == True)
+        query = select(Produto).where(
+            Produto.ativo == True,
+            Produto.tenant_id == tenant_id,
+        )
         
         # Filtrar por data de última sincronização se fornecida
         if last_sync:

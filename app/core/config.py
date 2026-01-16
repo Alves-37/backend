@@ -2,9 +2,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
 
 class Settings(BaseSettings):
-    # Default to Railway internal/public URLs; can be overridden por .env ou variáveis de ambiente
-    DATABASE_URL: str = "postgresql://postgres:yjZJwfkbcNTlNUNQUjbHoRpUtVtGVkpQ@postgres.railway.internal:5432/railway"
-    DATABASE_PUBLIC_URL: str | None = "postgresql://postgres:yjZJwfkbcNTlNUNQUjbHoRpUtVtGVkpQ@gondola.proxy.rlwy.net:20145/railway"
+    # URLs do PostgreSQL (Railway fornece DATABASE_URL internamente). Em ambiente local, use DATABASE_PUBLIC_URL.
+    # Não manter credenciais hardcoded no repositório.
+    DATABASE_URL: str | None = None
+    DATABASE_PUBLIC_URL: str | None = None
     JWT_SECRET: str = "a_very_secret_key_that_should_be_changed"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
@@ -21,16 +22,25 @@ class Settings(BaseSettings):
         if os.getenv("RAILWAY_ENVIRONMENT"):
             self.ENVIRONMENT = "production"
             self.PORT = int(os.getenv("PORT", 8000))
-        
-        # Preferir DATABASE_PUBLIC_URL em ambiente local (fora da Railway)
-        if self.ENVIRONMENT != "production":
-            public_url = os.getenv("DATABASE_PUBLIC_URL") or self.DATABASE_PUBLIC_URL
-            if public_url:
-                self.DATABASE_URL = public_url
 
-        # Ensure DATABASE_URL uses asyncpg
-        if self.DATABASE_URL and not self.DATABASE_URL.startswith("postgresql+asyncpg://"):
-            if self.DATABASE_URL.startswith("postgresql://"):
-                self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+        # Escolha da URL do banco:
+        # - Em produção (Railway): usar DATABASE_URL.
+        # - Local/dev: usar DATABASE_PUBLIC_URL (para conectar externamente).
+        db_url = None
+        if self.ENVIRONMENT == "production":
+            db_url = os.getenv("DATABASE_URL") or self.DATABASE_URL
+        else:
+            db_url = os.getenv("DATABASE_PUBLIC_URL") or self.DATABASE_PUBLIC_URL or os.getenv("DATABASE_URL") or self.DATABASE_URL
+
+        if not db_url:
+            raise ValueError("DATABASE_URL/DATABASE_PUBLIC_URL não configurado. Defina no .env (local) ou nas variáveis do Railway.")
+
+        # Ensure SQLAlchemy async driver
+        if db_url.startswith("postgresql+asyncpg://"):
+            self.DATABASE_URL = db_url
+        elif db_url.startswith("postgresql://"):
+            self.DATABASE_URL = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        else:
+            self.DATABASE_URL = db_url
 
 settings = Settings()

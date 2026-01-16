@@ -1,6 +1,7 @@
 from typing import Annotated
+import uuid
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +10,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.security import verify_password
 from app.db.database import get_db_session
-from app.db.models import User
+from app.db.models import User, Tenant
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -46,3 +47,25 @@ async def get_current_admin_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not admin")
 
     return user
+
+
+async def get_tenant_id(
+    db: AsyncSession = Depends(get_db_session),
+    x_tenant_id: str | None = Header(default=None, alias="X-Tenant-Id"),
+) -> uuid.UUID:
+    """Resolve o tenant atual via header X-Tenant-Id.
+
+    Fase 1 (compatível): se header não vier ou for inválido, cai para o primeiro tenant do banco.
+    """
+    if x_tenant_id:
+        try:
+            return uuid.UUID(x_tenant_id)
+        except Exception:
+            pass
+
+    result = await db.execute(select(Tenant).order_by(Tenant.created_at))
+    tenant = result.scalars().first()
+    if not tenant:
+        raise HTTPException(status_code=500, detail="Nenhum tenant configurado")
+
+    return tenant.id

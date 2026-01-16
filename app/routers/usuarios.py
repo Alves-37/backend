@@ -8,6 +8,7 @@ from datetime import datetime
 from ..db.database import get_db_session
 from ..db.models import User
 from app.core.realtime import manager as realtime_manager
+from app.core.deps import get_tenant_id
 from ..schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse
 from werkzeug.security import generate_password_hash
 
@@ -22,10 +23,18 @@ def _looks_like_hash(value: str) -> bool:
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"])
 
 @router.get("/", response_model=List[dict])
-async def listar_usuarios(db: AsyncSession = Depends(get_db_session)):
+async def listar_usuarios(
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Lista todos os usuários."""
     try:
-        result = await db.execute(select(User).where(User.ativo == True))
+        result = await db.execute(
+            select(User).where(
+                User.ativo == True,
+                User.tenant_id == tenant_id,
+            )
+        )
         usuarios = result.scalars().all()
         
         # Converter para dict com uuid
@@ -53,10 +62,18 @@ async def listar_usuarios(db: AsyncSession = Depends(get_db_session)):
         raise HTTPException(status_code=500, detail=f"Erro ao listar usuários: {str(e)}")
 
 @router.get("/desativados", response_model=List[dict])
-async def listar_usuarios_desativados(db: AsyncSession = Depends(get_db_session)):
+async def listar_usuarios_desativados(
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Lista todos os usuários desativados (ativo = False)."""
     try:
-        result = await db.execute(select(User).where(User.ativo == False))
+        result = await db.execute(
+            select(User).where(
+                User.ativo == False,
+                User.tenant_id == tenant_id,
+            )
+        )
         usuarios = result.scalars().all()
 
         usuarios_dict = []
@@ -82,11 +99,20 @@ async def listar_usuarios_desativados(db: AsyncSession = Depends(get_db_session)
         raise HTTPException(status_code=500, detail=f"Erro ao listar usuários desativados: {str(e)}")
 
 @router.get("/{usuario_id}", response_model=UsuarioResponse)
-async def obter_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_session)):
+async def obter_usuario(
+    usuario_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Obtém um usuário específico por UUID."""
     try:
-        # Tentar buscar por UUID primeiro
-        result = await db.execute(select(User).where(User.id == usuario_id))
+        uid = uuid.UUID(usuario_id)
+        result = await db.execute(
+            select(User).where(
+                User.id == uid,
+                User.tenant_id == tenant_id,
+            )
+        )
         usuario = result.scalar_one_or_none()
         
         if not usuario:
@@ -100,11 +126,20 @@ async def obter_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_sessi
         raise HTTPException(status_code=500, detail=f"Erro ao obter usuário: {str(e)}")
 
 @router.post("/", response_model=UsuarioResponse)
-async def criar_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_db_session)):
+async def criar_usuario(
+    usuario: UsuarioCreate,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Cria um novo usuário."""
     try:
         # Verificar se já existe usuário com mesmo nome de usuário
-        result = await db.execute(select(User).where(User.usuario == usuario.usuario))
+        result = await db.execute(
+            select(User).where(
+                User.usuario == usuario.usuario,
+                User.tenant_id == tenant_id,
+            )
+        )
         if result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Nome de usuário já existe")
         
@@ -117,7 +152,12 @@ async def criar_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_d
                 usuario_uuid = uuid.uuid4()
 
         # Verificar duplicidade de UUID (id) antes de inserir
-        existing_by_id = await db.execute(select(User).where(User.id == str(usuario_uuid)))
+        existing_by_id = await db.execute(
+            select(User).where(
+                User.id == usuario_uuid,
+                User.tenant_id == tenant_id,
+            )
+        )
         if existing_by_id.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Usuário já existe (mesmo id)")
         
@@ -126,6 +166,7 @@ async def criar_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_d
 
         novo_usuario = User(
             id=usuario_uuid,
+            tenant_id=tenant_id,
             nome=usuario.nome,
             usuario=usuario.usuario,
             senha_hash=senha_hash,
@@ -167,11 +208,17 @@ async def criar_usuario(usuario: UsuarioCreate, db: AsyncSession = Depends(get_d
         raise HTTPException(status_code=500, detail=f"Erro ao criar usuário: {str(e)}")
 
 @router.put("/{usuario_id}", response_model=UsuarioResponse)
-async def atualizar_usuario(usuario_id: str, usuario: UsuarioUpdate, db: AsyncSession = Depends(get_db_session)):
+async def atualizar_usuario(
+    usuario_id: str,
+    usuario: UsuarioUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Atualiza um usuário existente."""
     try:
+        uid = uuid.UUID(usuario_id)
         # Buscar usuário existente
-        result = await db.execute(select(User).where(User.id == usuario_id))
+        result = await db.execute(select(User).where(User.id == uid, User.tenant_id == tenant_id))
         usuario_existente = result.scalar_one_or_none()
         
         if not usuario_existente:
@@ -211,12 +258,14 @@ async def atualizar_usuario(usuario_id: str, usuario: UsuarioUpdate, db: AsyncSe
         
         if update_data:
             await db.execute(
-                update(User).where(User.id == usuario_id).values(**update_data)
+                update(User)
+                .where(User.id == uid, User.tenant_id == tenant_id)
+                .values(**update_data)
             )
         await db.commit()
         
         # Retornar usuário atualizado
-        result = await db.execute(select(User).where(User.id == usuario_id))
+        result = await db.execute(select(User).where(User.id == uid, User.tenant_id == tenant_id))
         usuario_atualizado = result.scalar_one()
 
         # Broadcast realtime: usuario atualizado
@@ -245,11 +294,16 @@ async def atualizar_usuario(usuario_id: str, usuario: UsuarioUpdate, db: AsyncSe
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar usuário: {str(e)}")
 
 @router.delete("/{usuario_id}")
-async def deletar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_session)):
+async def deletar_usuario(
+    usuario_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Deleta um usuário (soft delete)."""
     try:
+        uid = uuid.UUID(usuario_id)
         # Buscar usuário existente
-        result = await db.execute(select(User).where(User.id == usuario_id))
+        result = await db.execute(select(User).where(User.id == uid, User.tenant_id == tenant_id))
         usuario_existente = result.scalar_one_or_none()
         
         if not usuario_existente:
@@ -262,7 +316,11 @@ async def deletar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_ses
         # Opcional: se for o único admin ativo, também impedir exclusão
         if usuario_existente.is_admin:
             result_admins = await db.execute(
-                select(func.count()).select_from(User).where(User.is_admin == True, User.ativo == True)
+                select(func.count()).select_from(User).where(
+                    User.is_admin == True,
+                    User.ativo == True,
+                    User.tenant_id == tenant_id,
+                )
             )
             total_admins_ativos = result_admins.scalar_one() or 0
             if total_admins_ativos <= 1:
@@ -271,7 +329,7 @@ async def deletar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_ses
         # Soft delete
         await db.execute(
             update(User)
-            .where(User.id == usuario_id)
+            .where(User.id == uid, User.tenant_id == tenant_id)
             .values(ativo=False, updated_at=datetime.utcnow())
         )
         await db.commit()
@@ -294,11 +352,16 @@ async def deletar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_ses
         raise HTTPException(status_code=500, detail=f"Erro ao deletar usuário: {str(e)}")
 
 @router.put("/{usuario_id}/ativar", response_model=UsuarioResponse)
-async def ativar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_session)):
+async def ativar_usuario(
+    usuario_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Ativa um usuário (ativo = True)."""
     try:
+        uid = uuid.UUID(usuario_id)
         # Verificar existência
-        result = await db.execute(select(User).where(User.id == usuario_id))
+        result = await db.execute(select(User).where(User.id == uid, User.tenant_id == tenant_id))
         usuario_existente = result.scalar_one_or_none()
         if not usuario_existente:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -306,13 +369,13 @@ async def ativar_usuario(usuario_id: str, db: AsyncSession = Depends(get_db_sess
         # Ativar
         await db.execute(
             update(User)
-            .where(User.id == usuario_id)
+            .where(User.id == uid, User.tenant_id == tenant_id)
             .values(ativo=True, updated_at=datetime.utcnow())
         )
         await db.commit()
 
         # Retornar usuário atualizado
-        result = await db.execute(select(User).where(User.id == usuario_id))
+        result = await db.execute(select(User).where(User.id == uid, User.tenant_id == tenant_id))
         usuario_ativado = result.scalar_one()
 
         # Broadcast realtime: usuario ativado
